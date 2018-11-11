@@ -101,4 +101,127 @@ RSpec.describe "lakebed/expectations" do
       expect(emu).not_to read_from(nso + 0x1358) # program writes to 0x1350, not 0x1358
     end
   end
+
+  describe "infinite_loop" do
+    it "matches if the program enters an infinite loop after 2 instructions" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # adrp x0, #0
+      # b .
+      builder.add_code("\x00\x00\x00\x90\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+
+      expect(emu).to infinite_loop(:after => 2)
+    end
+
+    it "does not match if the program enters an infinite loop after 1 instruction" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # adrp x0, #0
+      # adrp x0, #0
+      # b .
+      builder.add_code("\x00\x00\x00\x90\x00\x00\x00\x90\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+
+      expect(emu).not_to infinite_loop(:after => 1)
+    end
+
+    it "has a reasonable default limit" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # adrp x0, #0
+      # adrp x0, #0
+      # b .
+      builder.add_code("\x00\x00\x00\x90\x00\x00\x00\x90\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+
+      expect(emu).to infinite_loop
+    end
+  end
+
+  describe "call_svc" do
+    it "matches if the specified svc is called" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # svc 0x1234
+      builder.add_code("\x81\x46\x02\xd4")
+      nso = builder.build
+
+      emu.add_nso(nso)
+
+      expect(emu).to call_svc(0x1234).and_return(0)
+    end
+
+    it "does not match if a different svc is called" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # svc 0x6
+      # b .
+      builder.add_code("\xc1\x00\x00\xd4\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+
+      expect(emu).not_to call_svc(0x1234)
+    end
+
+    it "matches if registers are correct" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+      
+      # mov w13, #0x5678
+      # svc 0x6
+      # b .
+      builder.add_code("\x0d\xcf\x8a\x52\xc1\x00\x00\xd4\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+      
+      expect(emu).to call_svc(6).with(:x13 => 0x5678).and_return(0)
+    end
+
+    it "does not match if registers are not correct" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+      
+      # mov w13, #0x5678
+      # svc 0x6
+      # b .
+      builder.add_code("\x0d\xcf\x8a\x52\xc1\x00\x00\xd4\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+      
+      expect(emu).not_to call_svc(6).with(:x13 => 0x5679).and_return(0)
+    end
+
+    it "sets x0 if and_return was specified" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+      
+      # svc 0x6
+      # b .
+      builder.add_code("\xc1\x00\x00\xd4\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+      
+      expect(emu).to call_svc(6).and_return(0x33bb)
+      expect(emu.x0).to eq(0x33bb)
+    end
+
+    # does not call the original implementation if and_return was specified
+    # calls the original implementation if and_return was not specified
+  end
 end

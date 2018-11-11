@@ -135,27 +135,183 @@ module Lakebed
   end
   
   class Emulator
-    BASE = 0x7100000000
+    STACK_TOP_ADDR = 0x7000000000
+    BASE_ADDR = 0x7100000000
     
-    def initialize()
+    def initialize(stack_size = 0x10000)
       @mu = UnicornEngine::Uc.new(UnicornEngine::UC_ARCH_ARM64, UnicornEngine::UC_MODE_ARM)
-      @addr = BASE
+      @addr = BASE_ADDR
+
+      @segments = []
+      @pending_error = nil
+      @svc_hooks = {}
+
+      @mu.reg_write(UnicornEngine::UC_ARM64_REG_PC, BASE_ADDR)
+      
+      # setup stack
+      @mu.mem_map(STACK_TOP_ADDR - stack_size, stack_size)
+      @mu.reg_write(UnicornEngine::UC_ARM64_REG_SP, STACK_TOP_ADDR)
+      
+      # enable NEON
+      @mu.reg_write(UnicornEngine::UC_ARM64_REG_CPACR_EL1, 3 << 20)
+
+      # add exception hook
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_INTR, Proc.new do |uc, value, ud|
+          begin
+            syndrome = @mu.query(UnicornEngine::UC_QUERY_EXCEPTION_SYNDROME)
+            ec = syndrome >> 26
+            iss = syndrome & ((1 << 24)-1)
+            
+            if ec == 0x15 then # SVC instruction taken from AArch64
+              if @svc_hooks[iss] then
+                @svc_hooks[iss].call(iss)
+              else
+                call_hle_svc(iss)
+              end
+            else
+              throw GuestExceptionError.new(self, "exception (ec: 0b#{ec.to_s(2)}, iss: 0x#{iss.to_s(16)})")
+            end
+          rescue => e
+            @pending_error = e
+            @mu.emu_stop
+          end
+        end)
+
+      # add unmapped write hook
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_MEM_WRITE_UNMAPPED, Proc.new do |uc, access, address, size, value|
+          @pending_error = UnmappedWriteError.new(self, [value].pack("Q<"), address)
+          @mu.emu_stop
+        end)
+    end
+
+    class GuestExceptionError < RuntimeError
+      def initialize(emu, message)
+        @emu = emu
+        super(message + " (pc = 0x#{emu.pc.to_s(16)})")
+      end
+    end
+    
+    class UnmappedWriteError < GuestExceptionError
+      def initialize(emu, value, address)
+        super(emu, "attempted to write #{value.unpack("H*").first} to 0x#{address.to_s(16)}")
+        @value = value
+        @address = address
+      end
+    end
+
+    class UnknownSvcError < GuestExceptionError
+      def initialize(emu, id)
+        super(emu, "attempted to call unknown svc 0x#{id.to_s(16)}")
+        @id = id
+      end
     end
 
     def add_nso(nso)
       nso.set_base_addr(@addr)
       nso.each_segment do |str, perm|
-        @mu.mem_map(@addr, str.size)
-        @mu.mem_write(@addr, str)
-        @mu.mem_protect(@addr, str.size, perm)
-        @addr+= str.size
+        if str.bytesize > 0 then
+          @segments.push(
+            {
+              :base => @addr,
+              :size => str.size,
+              :memory_type => {1 => 3, 3 => 4, 5 => 3}[perm],
+              :memory_attribute => 0,
+              :permission => perm})
+          @mu.mem_map(@addr, str.bytesize)
+          @mu.mem_write(@addr, str)
+          @mu.mem_protect(@addr, str.bytesize, perm)
+          @addr+= str.bytesize
+        end
       end
     end
 
     attr_reader :mu
     
-    def begin
-      @mu.emu_start(BASE, 0, 0, 10)
+    def begin(limit=10000)
+      @pending_error = nil
+      @mu.emu_start(pc, 0, 0, limit)
+      if @pending_error then
+        throw @pending_error
+      end
     end
+
+    def x(no)
+      @mu.reg_read(UnicornEngine::UC_ARM64_REG_X0 + no)
+    end
+
+    (0..30).each do |num|
+      define_method(("x" + num.to_s).to_sym) do |val=nil|
+        if val != nil then
+          @mu.reg_write(UnicornEngine::UC_ARM64_REG_X0 + num, val.to_i)
+        else
+          @mu.reg_read(UnicornEngine::UC_ARM64_REG_X0 + num)
+        end
+      end
+    end
+
+    (0..30).each do |num|
+      define_method(("x" + num.to_s + "=").to_sym) do |val|
+        @mu.reg_write(UnicornEngine::UC_ARM64_REG_X0 + num, val.to_i)
+      end
+    end
+
+    def pc
+      @mu.reg_read(UnicornEngine::UC_ARM64_REG_PC)
+    end
+
+    def hook_svc(id, &block)
+      @svc_hooks[id] = block
+    end
+
+    def unhook_svc(id)
+      @svc_hooks.delete(id)
+    end
+    
+    def call_hle_svc(id)
+      case id
+      when 6 # QueryMemory
+        meminfo = x0
+        addr = x2
+
+        unmapped = {
+          :base => 0,
+          :size => @segments.first[:base],
+          :memory_type => 0,
+          :permission => 0}
+        
+        segment = @segments.find do |seg|
+          seg[:base] <= addr
+        end || unmapped
+
+        if addr >= segment[:base] + segment[:size] then
+          segment = {
+            :base => segment[:base] + segment[:size],
+            :size => ~(segment[:base] + segment[:size]) + 1,
+            :memory_type => 0,
+            :permission => 0}
+        end
+
+        @mu.mem_write(meminfo, [
+                        segment[:base],
+                        segment[:size],
+                        segment[:memory_type],
+                        0,
+                        segment[:permission],
+                        0, 0, 0
+                      ].pack("Q<Q<L<L<L<L<L<L<"))
+        
+        x0(0)
+        x1(0)
+
+        @last_query_segment = segment
+        return segment
+      else
+        raise UnknownSvcError.new(self, id)
+      end
+    end
+
+    attr_reader :last_query_segment
   end
 end

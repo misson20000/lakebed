@@ -57,4 +57,33 @@ RSpec.describe Lakebed do
       end
     end
   end
+
+  describe Lakebed::Emulator do
+    it "should map in a stack" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # sub sp, sp, #0x10
+      # str x0, [sp]
+      # b .
+      builder.add_code("\xff\x43\x00\xd1\xe0\x03\x00\xf9\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+      emu.begin
+    end
+
+    it "should enable NEON" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # dup v0.2d, x8
+      # b .
+      builder.add_code("\x00\x0d\x08\x4e\x00\x00\x00\x14")
+      nso = builder.build
+
+      emu.add_nso(nso)
+      emu.begin
+    end
+  end
 end
