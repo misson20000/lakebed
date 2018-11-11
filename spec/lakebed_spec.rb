@@ -9,8 +9,9 @@ RSpec.describe Lakebed do
     describe "#each_segment" do
       it "iterates over segments added by #add_segment" do
         nso = Lakebed::Nso.new
-        nso.add_segment("abc", 3)
-        expect { |b| nso.each_segment(&b) }.to yield_with_args("abc", 3)
+        seg = "abc" + (0.chr * (0x1000 - 3))
+        nso.add_segment(seg, 3)
+        expect { |b| nso.each_segment(&b) }.to yield_with_args(seg, 3)
       end
     end
   end
