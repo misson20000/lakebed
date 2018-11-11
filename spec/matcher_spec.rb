@@ -166,9 +166,9 @@ RSpec.describe "lakebed/expectations" do
       emu = Lakebed::Emulator.new
       builder = Lakebed::NsoBuilder.new
 
-      # svc 0x6
+      # svc 0x0
       # b .
-      builder.add_code("\xc1\x00\x00\xd4\x00\x00\x00\x14")
+      builder.add_code("\x01\x00\x00\xd4\x00\x00\x00\x14")
       nso = builder.build
 
       emu.add_nso(nso)

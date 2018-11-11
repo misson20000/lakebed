@@ -271,6 +271,7 @@ module Lakebed
     
     def call_hle_svc(id)
       case id
+      when 0 # nullsvc
       when 6 # QueryMemory
         meminfo = x0
         addr = x2
