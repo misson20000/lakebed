@@ -1,7 +1,6 @@
 require "lakebed"
-require "lakebed/expectations"
 
-RSpec.describe "lakebed/expectations" do
+RSpec.describe "lakebed/matchers" do
   describe "write_to" do
     it "matches values" do
       emu = Lakebed::Emulator.new
@@ -102,7 +101,7 @@ RSpec.describe "lakebed/expectations" do
     end
   end
 
-  describe "infinite_loop" do
+  describe "halt" do
     it "matches if the program enters an infinite loop after 2 instructions" do
       emu = Lakebed::Emulator.new
       builder = Lakebed::NsoBuilder.new
@@ -114,7 +113,7 @@ RSpec.describe "lakebed/expectations" do
 
       emu.add_nso(nso)
 
-      expect(emu).to infinite_loop(:after => 2)
+      expect(emu).to halt(:after => 2)
     end
 
     it "does not match if the program enters an infinite loop after 1 instruction" do
@@ -129,7 +128,7 @@ RSpec.describe "lakebed/expectations" do
 
       emu.add_nso(nso)
 
-      expect(emu).not_to infinite_loop(:after => 1)
+      expect(emu).not_to halt(:after => 1)
     end
 
     it "has a reasonable default limit" do
@@ -144,7 +143,7 @@ RSpec.describe "lakebed/expectations" do
 
       emu.add_nso(nso)
 
-      expect(emu).to infinite_loop
+      expect(emu).to halt
     end
   end
 
