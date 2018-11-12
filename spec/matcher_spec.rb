@@ -99,6 +99,23 @@ RSpec.describe "lakebed/matchers" do
 
       expect(emu).not_to read_from(nso + 0x1358) # program writes to 0x1350, not 0x1358
     end
+
+    it "allows block usage" do
+      emu = Lakebed::Emulator.new
+      builder = Lakebed::NsoBuilder.new
+
+      # adrp x0, #0
+      # ldr x1, [x0, 0x1350]
+      builder.add_code("\x00\x00\x00\x90\x01\xa8\x49\xf9")
+      builder.add_data(0.chr * 0x400)
+      nso = builder.build
+
+      emu.add_nso(nso)
+      
+      expect do
+        emu.begin
+      end.to read_from(emu, nso + 0x1350)
+    end
   end
 
   describe "halt" do
