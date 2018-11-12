@@ -136,8 +136,8 @@ module Lakebed
   end
   
   class Emulator
-    STACK_TOP_ADDR = 0x7000000000
-    BASE_ADDR = 0x7100000000
+    STACK_TOP_ADDR = 0x70000000
+    BASE_ADDR = 0x71000000
     
     def initialize(stack_size = 0x10000)
       @mu = UnicornEngine::Uc.new(UnicornEngine::UC_ARCH_ARM64, UnicornEngine::UC_MODE_ARM)
