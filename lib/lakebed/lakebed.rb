@@ -97,7 +97,8 @@ module Lakebed
     def +(offset)
       return @base_addr + (offset.to_i)
     end
-    
+
+    attr_reader :base_addr
     attr_reader :segments
   end
 
