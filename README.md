@@ -1,5 +1,7 @@
 # Lakebed Temple
 
+[![Build Status](https://travis-ci.com/misson20000/lakebed.svg?branch=master)](https://travis-ci.com/misson20000/lakebed)
+
 This is an emulation-based testing extension for rspec, geared specifically towards specifying behaviors in compiled Nintendo Switch programs to test how closesly our reimplementations match them.
 
 ## Installation
