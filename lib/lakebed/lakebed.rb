@@ -216,7 +216,7 @@ module Lakebed
           @segments.push(
             {
               :base => @addr,
-              :size => str.size,
+              :size => str.bytesize,
               :memory_type => {1 => 3, 3 => 4, 5 => 3}[perm],
               :memory_attribute => 0,
               :permission => perm})
@@ -226,6 +226,7 @@ module Lakebed
           @addr+= str.bytesize
         end
       end
+      return nso
     end
 
     attr_reader :mu
@@ -282,8 +283,8 @@ module Lakebed
           :size => @segments.first[:base],
           :memory_type => 0,
           :permission => 0}
-        
-        segment = @segments.find do |seg|
+
+        segment = @segments.reverse_each.find do |seg|
           seg[:base] <= addr
         end || unmapped
 
