@@ -9,9 +9,12 @@ module Lakebed
   class Nso
     def initialize
       @segments = []
+      @symbols = {}
       @base_addr = nil
     end
 
+    attr_accessor :symbols
+    
     def self.from_file(file)
       magic, version, reserved, flags = file.read(0x10).unpack("a4L<L<L<")
       if magic != "NSO0" then
@@ -100,6 +103,10 @@ module Lakebed
       return @base_addr + (offset.to_i)
     end
 
+    def get_symbol(s)
+      return @base_addr + @symbols[s].to_i
+    end
+    
     attr_reader :base_addr
     attr_reader :segments
   end
@@ -295,6 +302,8 @@ module Lakebed
         nso.add_segment(content, permission)
       end
 
+      nso.symbols = @symbols
+      
       return nso
     end
 
