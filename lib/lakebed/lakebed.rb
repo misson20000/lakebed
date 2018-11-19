@@ -240,6 +240,22 @@ module Lakebed
             lc+= sec.content.bytesize
           end
         end
+
+        if segment == :data then
+          # pad to page again
+          lc += 0xfff
+          lc &= ~0xfff
+
+          # do bss
+          @sections.each do |sec|
+            if sec.segment == :bss then
+              sec.nso_location = lc
+              content = content + sec.content
+              lc+= sec.content.bytesize
+            end
+          end
+        end
+        
         [segment, permission, segment_base, content]
       end.each do |params|
         segment, permission, segment_base, content = params
