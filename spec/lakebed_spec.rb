@@ -84,7 +84,24 @@ RSpec.describe Lakebed do
         expect(sec2.nso_location).to eq(3)
         expect(sec3.nso_location).to eq(0x1000)
       end
-      
+
+      it "puts symbols at the beginning and end of each segment" do
+        builder = Lakebed::NsoBuilder.new(:prelude => false)
+        sec1 = builder.add_section("abc", :text)
+        sec2 = builder.add_section("ghi", :data)
+        
+        builder.build
+
+        expect(builder.get_symbol("_text_start").to_i).to eq(0)
+        expect(builder.get_symbol("_text_end").to_i).to eq(3)
+        expect(builder.get_symbol("_rodata_start").to_i).to eq(0x1000)
+        expect(builder.get_symbol("_rodata_end").to_i).to eq(0x1000)
+        expect(builder.get_symbol("_data_start").to_i).to eq(0x1000)
+        expect(builder.get_symbol("_data_end").to_i).to eq(0x1003)
+        expect(builder.get_symbol("_bss_start").to_i).to eq(0x2000)
+        expect(builder.get_symbol("_bss_end").to_i).to eq(0x2000)
+      end
+
       it "does not create a DT_REL tag if #add_rel is not called" do
       end
     end

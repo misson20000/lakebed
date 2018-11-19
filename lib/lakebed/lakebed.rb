@@ -125,7 +125,7 @@ module Lakebed
       end
 
       def to_i
-        @section.nso_location + @offset
+        (@section ? @section.nso_location : 0) + @offset
       end
       
       def to_location
@@ -230,6 +230,8 @@ module Lakebed
         # pad to page
         lc += 0xfff
         lc &= ~0xfff
+
+        add_symbol("_" + segment.to_s + "_start", Location.new(nil, lc))
         
         segment_base = lc
         content = String.new
@@ -241,11 +243,15 @@ module Lakebed
           end
         end
 
+        add_symbol("_" + segment.to_s + "_end", Location.new(nil, lc))
+
         if segment == :data then
           # pad to page again
           lc += 0xfff
           lc &= ~0xfff
 
+          add_symbol("_bss_start", Location.new(nil, lc))
+          
           # do bss
           @sections.each do |sec|
             if sec.segment == :bss then
@@ -254,6 +260,8 @@ module Lakebed
               lc+= sec.content.bytesize
             end
           end
+
+          add_symbol("_bss_end", Location.new(nil, lc))
         end
         
         [segment, permission, segment_base, content]
@@ -270,6 +278,14 @@ module Lakebed
       end
 
       return nso
+    end
+
+    def has_symbol(name)
+      @symbols.include?(name)
+    end
+
+    def get_symbol(name)
+      @symbols[name]
     end
   end
   
