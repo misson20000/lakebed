@@ -402,6 +402,13 @@ module Lakebed
           @pending_error = UnmappedWriteError.new(self, [value].pack("Q<"), address)
           @mu.emu_stop
         end)
+
+      # add unmapped read hook
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_MEM_READ_UNMAPPED, Proc.new do |uc, access, address, size, value|
+          @pending_error = UnmappedReadError.new(self, size, address)
+          @mu.emu_stop
+        end)
     end
 
     class GuestExceptionError < RuntimeError
@@ -415,6 +422,14 @@ module Lakebed
       def initialize(emu, value, address)
         super(emu, "attempted to write #{value.unpack("H*").first} to 0x#{address.to_s(16)}")
         @value = value
+        @address = address
+      end
+    end
+
+    class UnmappedReadError < GuestExceptionError
+      def initialize(emu, size, address)
+        super(emu, "attempted to read 0x#{size.to_s(16)} bytes from 0x#{address.to_s(16)}")
+        @size = size
         @address = address
       end
     end
