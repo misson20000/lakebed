@@ -271,10 +271,13 @@ module Lakebed
         add_symbol("_" + segment.to_s + "_end", Location.new(nil, lc))
 
         if segment == :data then
+          pad_begin = lc
           # pad to page again
           lc += 0xfff
           lc &= ~0xfff
 
+          content+= 0.chr * (lc - pad_begin)
+          
           add_symbol("_bss_start", Location.new(nil, lc))
           
           # do bss
