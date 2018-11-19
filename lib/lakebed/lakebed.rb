@@ -3,6 +3,8 @@ require "unicorn_engine/arm64_const"
 require "digest"
 require "lz4-ruby"
 
+require_relative "elf.rb"
+
 module Lakebed
   class Nso
     def initialize
@@ -103,33 +105,153 @@ module Lakebed
   end
 
   class NsoBuilder
-    def initialize
-      @code = String.new
-      @data = String.new
+    def initialize(params={})
+      @sections = []
+      @symbols = {}
+      @params = params
+      
+      if !@params.include?(:prelude) || @params[:prelude] then
+        # b 8
+        # .word _mod0
+        first_sec = add_section("\x02\x00\x00\x14BAD!", :text)
+        first_sec.add_static_relocation(4, Elf::R_AARCH64_PREL32, "_mod0", 4)
+      end
     end
 
-    def add_code(str)
-      off = @code.bytesize
-      @code+= str
-      return off
+    class Location
+      def initialize(section, offset)
+        @section = section
+        @offset = offset
+      end
+
+      def to_i
+        @section.nso_location + @offset
+      end
+      
+      def to_location
+        self
+      end
+      
+      attr_reader :section
+      attr_reader :offset
     end
 
-    def add_data(str)
-      off = @data.bytesize
-      @data+= str
-      return off
+    class Relocation
+      def initialize(location, type, symbol, addend)
+        @location = location
+        @type = type
+        @symbol = symbol
+        @addend = addend
+      end
+
+      def run(content, content_base, symbols)
+        s = symbols[@symbol].to_i
+        a = @addend
+        p = @location.to_i
+
+        #puts "s: #{s}, a: #{a}, p: #{p}"
+        
+        data = case @type
+               when Elf::R_AARCH64_ABS64
+                 raise "can't be run statically"
+               when Elf::R_AARCH64_ABS32
+                 raise "can't be run statically"
+               when Elf::R_AARCH64_ABS16
+                 raise "can't be run statically"
+               when Elf::R_AARCH64_PREL64
+                 [s + a - p].pack("Q<")
+               when Elf::R_AARCH64_PREL32
+                 [s + a - p].pack("L<")
+               when Elf::R_AARCH64_PREL16
+                 [s + a - p].pack("S<")
+               end
+
+        content[p - content_base, data.size] = data
+      end
+      
+      attr_reader :location
+      attr_reader :type
+      attr_reader :symbol
+      attr_reader :addend
+    end
+    
+    class Section
+      def initialize(content, segment)
+        @content = content
+        @segment = segment
+        @static_relocations = []
+        @dynamic_relocations = []
+      end
+
+      attr_reader :content
+      attr_reader :segment
+      attr_reader :static_relocations
+      attr_reader :dynamic_relocations
+      attr_accessor :nso_location
+      
+      def +(offset)
+        Location.new(self, offset)
+      end
+
+      def to_location(offset=0)
+        Location.new(self, offset)
+      end
+
+      def add_static_relocation(offset, type, symbol, addend)
+        rel = Relocation.new(to_location(offset), type, symbol, addend)
+        @static_relocations.push(rel)
+        rel
+      end
+
+      def run_static_relocations(string, string_base, symbols)
+        @static_relocations.each do |reloc|
+          reloc.run(string, string_base, symbols)
+        end
+      end
+    end
+    
+    # segment is :text, :rodata, or :data
+    def add_section(content, segment)
+      section = Section.new(content.b, segment)
+      @sections.push(section)
+      return section
     end
 
+    def add_symbol(name, location)
+      @symbols[name] = location.to_location
+    end
+    
     def build
       nso = Nso.new
-      
-      code_pad_size = (@code.bytesize + 0xfff) & ~0xfff
-      @code+= 0.chr * (code_pad_size - @code.bytesize)
-      nso.add_segment(@code, 5)
 
-      data_pad_size = (@data.bytesize + 0xfff) & ~0xfff
-      @data+= 0.chr * (data_pad_size - @data.bytesize)
-      nso.add_segment(@data, 3)
+      lc = 0
+      
+      {:text => 5, :rodata => 1, :data => 3}.map do |segment, permission|
+        # pad to page
+        lc += 0xfff
+        lc &= ~0xfff
+        
+        segment_base = lc
+        content = String.new
+        @sections.each do |sec|
+          if sec.segment == segment then
+            sec.nso_location = lc
+            content = content + sec.content
+            lc+= sec.content.bytesize
+          end
+        end
+        [segment, permission, segment_base, content]
+      end.each do |params|
+        segment, permission, segment_base, content = params
+        @sections.each do |sec|
+          if sec.segment == segment then
+            sec.run_static_relocations(content, segment_base, @symbols)
+          end
+        end
+        content_pad_size = (content.bytesize + 0xfff) & ~0xfff
+        content+= 0.chr * (content_pad_size - content.bytesize)
+        nso.add_segment(content, permission)
+      end
 
       return nso
     end
