@@ -44,7 +44,7 @@ module Lakebed
       failure_message do |actual|
         first_line = "expected that emulator would read 0x#{@match_size.to_s(16)} bytes from 0x#{@address.to_s(16)}"
         if @read_size then
-          second_line = "read: #{@read_value.unpack("H*").first}"
+          second_line = "read 0x#{@read_size.to_s(16)} bytes"
         else
           second_line = "stuck at 0x#{@pc.to_s(16)}"
         end
