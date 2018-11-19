@@ -116,6 +116,7 @@ module Lakebed
       @sections = []
       @symbols = {}
       @params = params
+      @dynamic = []
       
       if !@params.include?(:prelude) || @params[:prelude] then
         # b 8
@@ -170,7 +171,11 @@ module Lakebed
       end
 
       def run(content, content_base, symbols)
-        s = symbols[@symbol].to_i
+        if @symbol.is_a? Location then
+          s = @symbol.to_i
+        else
+          s = symbols[@symbol].to_i
+        end
         a = @addend
         p = @location.to_i
 
@@ -245,8 +250,36 @@ module Lakebed
     def add_symbol(name, location)
       @symbols[name] = location.to_location
     end
+
+    def add_dt(tag, value)
+      @dynamic.push([tag, value])
+    end
+    
+    def generate_dynamic
+      dynamic = String.new
+      @dynamic.each do |entry|
+        if entry[1].is_a? Location then
+          dynamic+= [entry[0], 0].pack("Q<Q<")
+        else
+          dynamic+= [entry[0], entry[1]].pack("Q<Q<")
+        end
+      end
+      dynamic+= [0, 0].pack("Q<Q<") # DT_NULL
+
+      dynamic_section = add_section(dynamic, :data)
+      @dynamic.each_with_index do |entry, i|
+        if entry[1].is_a? Location then
+          dynamic_section.add_static_relocation(i * 16 + 8, Elf::R_AARCH64_ABS64, entry[1], 0)
+        end
+      end
+      add_symbol("_dynamic_start", dynamic_section)
+    end
     
     def build
+      if !@params.include?(:dynamic) || @params[:dynamic] then
+        generate_dynamic
+      end
+      
       nso = Nso.new
 
       lc = 0
