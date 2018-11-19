@@ -116,6 +116,20 @@ module Lakebed
         first_sec = add_section("\x02\x00\x00\x14BAD!", :text)
         first_sec.add_static_relocation(4, Elf::R_AARCH64_PREL32, "_mod0", 4)
       end
+
+      if !@params.include?(:mod0) || @params[:mod0] then
+        mod0 = add_section("MOD0" + [0, 0, 0, 0, 0, 0].pack("L<*"), :data)
+        mod0.add_static_relocation(4*1, Elf::R_AARCH64_PREL32, "_dynamic_start", 4*1)
+        mod0.add_static_relocation(4*2, Elf::R_AARCH64_PREL32, "_bss_start", 4*2)
+        mod0.add_static_relocation(4*3, Elf::R_AARCH64_PREL32, "_bss_end", 4*3)
+        mod0.add_static_relocation(4*4, Elf::R_AARCH64_PREL32, "_eh_frame_hdr_start", 4*4)
+        mod0.add_static_relocation(4*5, Elf::R_AARCH64_PREL32, "_eh_frame_hdr_end", 4*5)
+        mod0.add_static_relocation(4*6, Elf::R_AARCH64_PREL32, "_module_object", 4*6)
+        add_symbol("_mod0", mod0)
+        
+        module_object = add_section(0.chr * 0xB8, :bss)
+        add_symbol("_module_object", module_object) 
+      end
     end
 
     class Location
@@ -126,6 +140,10 @@ module Lakebed
 
       def to_i
         (@section ? @section.nso_location : 0) + @offset
+      end
+
+      def -(other)
+        return to_i - other.to_i
       end
       
       def to_location

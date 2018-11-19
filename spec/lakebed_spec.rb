@@ -59,21 +59,21 @@ RSpec.describe Lakebed do
     
     describe "#build" do
       it "pads text to page size" do
-        builder = Lakebed::NsoBuilder.new
+        builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false)
         builder.add_section("abc", :text)
         expect(builder.build.segments.first[0].size).to eq(0x1000)
       end
 
       it "includes code in an RX segment" do
-        builder = Lakebed::NsoBuilder.new
+        builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false)
         builder.add_section("abc", :text)
         segment = builder.build.segments.first
-        expect(segment[0][8..segment[0].size-1]).to start_with("abc")
+        expect(segment[0]).to start_with("abc")
         expect(segment[1]).to eq(5)
       end
 
       it "sets section bases appropriately" do
-        builder = Lakebed::NsoBuilder.new(:prelude => false)
+        builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false)
         sec1 = builder.add_section("abc", :text)
         sec2 = builder.add_section("def", :text)
         sec3 = builder.add_section("ghi", :data)
@@ -86,7 +86,7 @@ RSpec.describe Lakebed do
       end
 
       it "puts symbols at the beginning and end of each segment" do
-        builder = Lakebed::NsoBuilder.new(:prelude => false)
+        builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false)
         sec1 = builder.add_section("abc", :text)
         sec2 = builder.add_section("ghi", :data)
         
@@ -107,14 +107,14 @@ RSpec.describe Lakebed do
     end
 
     it "includes a standard NSO prelude" do
-      builder = Lakebed::NsoBuilder.new
+      builder = Lakebed::NsoBuilder.new(:prelude => true, :mod0 => false)
       builder.add_section("abc", :text)
       segment = builder.build.segments.first
       expect(segment[0]).to start_with("\x02\x00\x00\x14\x00\x00\x00\x00")
     end
 
     it "relocates the MOD0 offset in the prelude if _mod0 exists" do
-      builder = Lakebed::NsoBuilder.new
+      builder = Lakebed::NsoBuilder.new(:prelude => true, :mod0 => false)
       builder.add_section("abc", :text)
       mod0_sec = builder.add_section("MOD0", :data)
       builder.add_symbol("_mod0", mod0_sec)
@@ -122,6 +122,23 @@ RSpec.describe Lakebed do
       segments = builder.build.segments
       expect(segments[0][0][4, 4].unpack("L<").first).to eq(segments[0][0].bytesize)
       expect(segments[2][0][0, 4]).to eq("MOD0")
+    end
+
+    it "generates MOD0 automatically" do
+      builder = Lakebed::NsoBuilder.new(:prelude => true, :mod0 => true)
+      builder.add_section("abc", :text)
+      
+      segments = builder.build.segments
+      expect(segments[0][0][4, 4].unpack("L<").first).to eq(segments[0][0].bytesize)
+
+      mod0 = segments[2][0].unpack("A4L<L<L<L<L<L<")
+      expect(mod0[0]).to eq("MOD0")
+      # skip _dynamic_start for now
+      expect(mod0[2]).to eq(builder.get_symbol("_bss_start") - builder.get_symbol("_mod0"))
+      expect(mod0[3]).to eq(builder.get_symbol("_bss_end") - builder.get_symbol("_mod0"))
+      # skip _eh_frame_hdr_start
+      # skip _eh_frame_hdr_end
+      expect(mod0[6]).to eq(builder.get_symbol("_module_object") - builder.get_symbol("_mod0"))
     end
     
     describe "#add_rel" do
