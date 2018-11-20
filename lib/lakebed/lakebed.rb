@@ -183,11 +183,11 @@ module Lakebed
         
         data = case @type
                when Elf::R_AARCH64_ABS64
-                 raise "can't be run statically"
+                 [s + a].pack("Q<")
                when Elf::R_AARCH64_ABS32
-                 raise "can't be run statically"
+                 [s + a].pack("L<")
                when Elf::R_AARCH64_ABS16
-                 raise "can't be run statically"
+                 [s + a].pack("S<")
                when Elf::R_AARCH64_PREL64
                  [s + a - p].pack("Q<")
                when Elf::R_AARCH64_PREL32

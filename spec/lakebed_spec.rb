@@ -25,19 +25,12 @@ RSpec.describe Lakebed do
     end
 
     describe Lakebed::NsoBuilder::Relocation do
-      it "refuses to statically relocate absolute addresses" do
-        [Lakebed::Elf::R_AARCH64_ABS64, Lakebed::Elf::R_AARCH64_ABS32, Lakebed::Elf::R_AARCH64_ABS16].each do |rel|
-          expect do
-            loc = instance_double("Lakebed::NsoBuilder::Location", :to_i => 4)
-            rel = Lakebed::NsoBuilder::Relocation.new(loc, rel, "test_symbol", 8)
-            rel.run(nil, 0, {"test_symbol" => instance_double("Lakebed::NsoBuilder::Location", :to_i => 12)})
-          end.to raise_error("can't be run statically")
-        end
-      end
-
-      {"R_AARCH64_PREL64" => "Q<",
-       "R_AARCH64_PREL32" => "L<",
-       "R_AARCH64_PREL16" => "S<"}.each_pair do |rel, pack_format|
+      {"R_AARCH64_ABS64" => [128 + 8].pack("Q<"),
+       "R_AARCH64_ABS32" => [128 + 8].pack("L<"),
+       "R_AARCH64_ABS16" => [128 + 8].pack("S<"),
+       "R_AARCH64_PREL64" => [128 + 8 - 12].pack("Q<"),
+       "R_AARCH64_PREL32" => [128 + 8 - 12].pack("L<"),
+       "R_AARCH64_PREL16" => [128 + 8 - 12].pack("S<")}.each_pair do |rel, expected_value|
         describe "#{rel}" do
           it "works" do
             loc = instance_double("Lakebed::NsoBuilder::Location", :to_i => 12)
@@ -49,7 +42,6 @@ RSpec.describe Lakebed do
             rel.run(content, 8, symbols)
 
             expected = "a" * 64
-            expected_value = [128 + 8 - 12].pack(pack_format)
             expected[4, expected_value.size] = expected_value
             expect(content).to eq(expected)
           end
