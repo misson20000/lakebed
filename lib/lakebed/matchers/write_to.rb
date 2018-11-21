@@ -56,8 +56,8 @@ module Lakebed
 
         @pc = @emu.pc
 
-        if @match_value then
-          return @written_value == @match_value
+        if @match_content then
+          return @written_value == @match_content
         else
           return @written_size == @match_size
         end
