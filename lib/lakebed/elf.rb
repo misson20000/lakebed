@@ -6,7 +6,25 @@ module Lakebed
     R_AARCH64_PREL64 = 260
     R_AARCH64_PREL32 = 261
     R_AARCH64_PREL16 = 262
+    R_AARCH64_COPY = 1024
+    R_AARCH64_GLOB_DAT = 1025
+    R_AARCH64_JUMP_SLOT = 1026
+    R_AARCH64_RELATIVE = 1027
+    R_AARCH64_TLS_DTPREL64 = 1028
+    R_AARCH64_TLS_DTPMOD64 = 1029
+    R_AARCH64_TLS_TPREL64 = 1030
+    R_AARCH64_TLSDESC = 1031
+    R_AARCH64_IRELATIVE = 1032
 
+    def self.relocation_size(r)
+      case r
+      when R_AARCH64_COPY..R_AARCH64_IRELATIVE
+        return 8
+      else
+        raise "unknown relocation size for #{r}"
+      end
+    end
+    
     DT_NULL = 0
     DT_NEEDED = 1
     DT_PLTRELSZ = 2

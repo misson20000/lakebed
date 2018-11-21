@@ -51,6 +51,5 @@ module Lakebed
         return first_line + "\n     " + second_line
       end
     end
-
   end
 end

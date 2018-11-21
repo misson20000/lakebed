@@ -106,6 +106,22 @@ module Lakebed
     def get_symbol(s)
       return @base_addr + @symbols[s].to_i
     end
+
+    def read(offset, size)
+      offset = offset.to_i
+      text = String.new
+      lc = 0
+      @segments.each do |seg|
+        if lc >= offset + size then
+          return text
+        end
+        if offset - lc < seg[0].bytesize then
+          text+= seg[0][offset - lc + text.bytesize, size - text.bytesize]
+        end
+        lc+= seg[0].bytesize
+      end
+      return text
+    end
     
     attr_reader :base_addr
     attr_reader :segments
@@ -213,7 +229,7 @@ module Lakebed
         @dynamic_relocations = []
       end
 
-      attr_reader :content
+      attr_accessor :content
       attr_reader :segment
       attr_reader :static_relocations
       attr_reader :dynamic_relocations
@@ -230,6 +246,12 @@ module Lakebed
       def add_static_relocation(offset, type, symbol, addend)
         rel = Relocation.new(to_location(offset), type, symbol, addend)
         @static_relocations.push(rel)
+        rel
+      end
+
+      def add_dynamic_relocation(offset, type, symbol, addend)
+        rel = Relocation.new(to_location(offset), type, symbol, addend)
+        @dynamic_relocations.push(rel)
         rel
       end
 
@@ -257,7 +279,59 @@ module Lakebed
     
     def generate_dynamic
       dynamic = String.new
+
+      # generate relocation section if none exists already
+      if !(@dynamic.find do |entry| [Elf::DT_REL, Elf::DT_RELA].include?(entry[0]) end) then
+        if @params[:rel] != false then
+          relative_count = 0
+          if !@params[:rel] || @params[:rel] == :rela then
+            rel_section = add_section(String.new, :data)
+            @sections.each do |sec|
+              sec.dynamic_relocations.each do |rel|
+                if rel.symbol == nil then
+                  off = rel_section.content.bytesize
+                  rel_section.content+= [0, rel.type, 0, rel.addend].pack("Q<L<L<q<")
+                  rel_section.add_static_relocation(off, Elf::R_AARCH64_ABS64, rel.location, 0);
+                else
+                  raise "symbol-based relocations not yet supported"
+                end
+              end
+            end
+            @dynamic.push [Elf::DT_RELA, rel_section.to_location]
+            @dynamic.push [Elf::DT_RELASZ, rel_section.content.bytesize]
+            @dynamic.push [Elf::DT_RELAENT, 0x18]
+            # TODO: put relative relocations first
+            @dynamic.push [Elf::DT_RELACOUNT, rel_section.content.bytesize / 0x18]
+          elsif @params[:rel] == :rel then
+            rel_section = add_section(String.new, :data)
+            @sections.each do |sec|
+              sec.dynamic_relocations.each do |rel|
+                if rel.symbol == nil then
+                  off = rel_section.content.bytesize
+                  rel_section.content+= [0, rel.type, 0].pack("Q<L<L<")
+                  rel_section.add_static_relocation(off, Elf::R_AARCH64_ABS64, rel.location, 0);
+                  # put addend in place statically
+                  rel.location.section.content[rel.location.offset, Elf::relocation_size(rel.type)] = [rel.addend].pack("Q<")[0, Elf::relocation_size(rel.type)]
+                else
+                  raise "symbol-based relocations not yet supported"
+                end
+              end
+            end
+            @dynamic.push [Elf::DT_REL, rel_section.to_location]
+            @dynamic.push [Elf::DT_RELSZ, rel_section.content.bytesize]
+            @dynamic.push [Elf::DT_RELENT, 0x10]
+            # TODO: put relative relocations first
+            @dynamic.push [Elf::DT_RELCOUNT, rel_section.content.bytesize / 0x10]
+          else
+            raise "invalid :rel param: #{@params[:rel]}"
+          end
+        end
+      end
+
       @dynamic.each do |entry|
+        if entry[0] == Elf::DT_REL || entry[0] == Elf::DT_RELA then
+          has_rel = true
+        end
         if entry[1].is_a? Location then
           dynamic+= [entry[0], 0].pack("Q<Q<")
         else

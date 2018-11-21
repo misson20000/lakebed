@@ -14,6 +14,17 @@ RSpec.describe Lakebed do
         expect { |b| nso.each_segment(&b) }.to yield_with_args(seg, 3)
       end
     end
+
+    describe "#read" do
+      it "reads across segments" do
+        nso = Lakebed::Nso.new
+        seg1 = "abc" + ("d" * (0x1000 - 3))
+        seg2 = "efg" + ("h" * (0x1000 - 3))
+        nso.add_segment(seg1, 3)
+        nso.add_segment(seg2, 3)
+        expect(nso.read(0x1000 - 3, 6)).to eq("dddefg")
+      end
+    end
   end
   
   describe Lakebed::NsoBuilder do
@@ -25,25 +36,27 @@ RSpec.describe Lakebed do
     end
 
     describe Lakebed::NsoBuilder::Relocation do
-      {"R_AARCH64_ABS64" => [128 + 8].pack("Q<"),
-       "R_AARCH64_ABS32" => [128 + 8].pack("L<"),
-       "R_AARCH64_ABS16" => [128 + 8].pack("S<"),
-       "R_AARCH64_PREL64" => [128 + 8 - 12].pack("Q<"),
-       "R_AARCH64_PREL32" => [128 + 8 - 12].pack("L<"),
-       "R_AARCH64_PREL16" => [128 + 8 - 12].pack("S<")}.each_pair do |rel, expected_value|
-        describe "#{rel}" do
-          it "works" do
-            loc = instance_double("Lakebed::NsoBuilder::Location", :to_i => 12)
-            symbols = {
-              "test_symbol" => instance_double("Lakebed::NsoBuilder::Location", :to_i => 128)
-            }
-            rel = Lakebed::NsoBuilder::Relocation.new(loc, Lakebed::Elf.const_get(rel), "test_symbol", 8)
-            content = "a" * 64
-            rel.run(content, 8, symbols)
-
-            expected = "a" * 64
-            expected[4, expected_value.size] = expected_value
-            expect(content).to eq(expected)
+      describe "#run" do
+        {"R_AARCH64_ABS64" => [128 + 8].pack("Q<"),
+         "R_AARCH64_ABS32" => [128 + 8].pack("L<"),
+         "R_AARCH64_ABS16" => [128 + 8].pack("S<"),
+         "R_AARCH64_PREL64" => [128 + 8 - 12].pack("Q<"),
+         "R_AARCH64_PREL32" => [128 + 8 - 12].pack("L<"),
+         "R_AARCH64_PREL16" => [128 + 8 - 12].pack("S<")}.each_pair do |rel, expected_value|
+          describe "#{rel}" do
+            it "works" do
+              loc = instance_double("Lakebed::NsoBuilder::Location", :to_i => 12)
+              symbols = {
+                "test_symbol" => instance_double("Lakebed::NsoBuilder::Location", :to_i => 128)
+              }
+              rel = Lakebed::NsoBuilder::Relocation.new(loc, Lakebed::Elf.const_get(rel), "test_symbol", 8)
+              content = "a" * 64
+              rel.run(content, 8, symbols)
+              
+              expected = "a" * 64
+              expected[4, expected_value.size] = expected_value
+              expect(content).to eq(expected)
+            end
           end
         end
       end
@@ -93,9 +106,6 @@ RSpec.describe Lakebed do
         expect(builder.get_symbol("_bss_start").to_i).to eq(0x2000)
         expect(builder.get_symbol("_bss_end").to_i).to eq(0x2000)
       end
-
-      it "does not create a DT_REL tag if #add_rel is not called" do
-      end
     end
 
     it "includes a standard NSO prelude" do
@@ -132,15 +142,59 @@ RSpec.describe Lakebed do
       # skip _eh_frame_hdr_end
       expect(mod0[6]).to eq(builder.get_symbol("_module_object") - builder.get_symbol("_mod0"))
     end
-    
-    describe "#add_rel" do
-      it "creates valid DT_REL and DT_RELSZ tags" do
-      end
 
-      it "includes the relocation in the DT_REL table" do
+    it "generates .dynamic and .rela.dyn sections correctly" do
+      builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false, :rel => :rela)
+      my_text = builder.add_section("0000111122223333", :text);
+      my_text.add_dynamic_relocation(8, Lakebed::Elf::R_AARCH64_RELATIVE, nil, 456)
+
+      nso = builder.build
+      expect(nso.read(0, 16)).to eq("0000111122223333") # shouldn't modify original text
+
+      rela_section = nil
+      i = builder.get_symbol("_dynamic_start").to_i
+      while nso.read(i, 8).unpack("Q<").first != Lakebed::Elf::DT_NULL do
+        if nso.read(i, 8).unpack("Q<").first == Lakebed::Elf::DT_RELA then
+          rela_section = nso.read(i+8, 8).unpack("Q<")[0]
+        end
+        if nso.read(i, 8).unpack("Q<").first == Lakebed::Elf::DT_REL then
+          raise "has DT_REL tag"
+        end
+        i+= 16
       end
+      if rela_section == nil then
+        raise "no DT_RELA tag"
+      end
+      
+      expect(nso.read(rela_section, 0x18)).to eq([8, Lakebed::Elf::R_AARCH64_RELATIVE, 456].pack("Q<Q<Q<"))
     end
-  end
+
+    it "generates .rel.dyn section correctly" do
+      builder = Lakebed::NsoBuilder.new(:prelude => false, :mod0 => false, :rel => :rel)
+      my_text = builder.add_section("0000111122223333", :text);
+      my_text.add_dynamic_relocation(8, Lakebed::Elf::R_AARCH64_RELATIVE, nil, 456)
+
+      nso = builder.build
+      expect(nso.read(0, 16)).to eq("00001111#{[456].pack("Q<")}") # SHOULD modify original text
+
+      rel_section = nil
+      i = builder.get_symbol("_dynamic_start").to_i
+      while nso.read(i, 8).unpack("Q<").first != Lakebed::Elf::DT_NULL do
+        if nso.read(i, 8).unpack("Q<").first == Lakebed::Elf::DT_RELA then
+          raise "has DT_RELA tag"
+        end
+        if nso.read(i, 8).unpack("Q<").first == Lakebed::Elf::DT_REL then
+          rel_section = nso.read(i+8, 8).unpack("Q<")[0]
+        end
+        i+= 16
+      end
+      if rel_section == nil then
+        raise "no DT_REL tag"
+      end
+      
+      expect(nso.read(rel_section, 0x10)).to eq([8, Lakebed::Elf::R_AARCH64_RELATIVE].pack("Q<Q<"))
+    end
+end
 
   describe Lakebed::Emulator do
     it "should map in a stack" do
