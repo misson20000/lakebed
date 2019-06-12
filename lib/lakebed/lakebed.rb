@@ -585,8 +585,8 @@ module Lakebed
     
     def call_hle_svc(id)
       case id
-      when 0 # nullsvc
-      when 6 # QueryMemory
+      when 0x0 # nullsvc
+      when 0x6 # QueryMemory
         meminfo = x0
         addr = x2
 
@@ -622,6 +622,8 @@ module Lakebed
 
         @last_query_segment = segment
         return segment
+      when 0x27 # OutputDebugString
+        puts @mu.mem_read(x0, x1)
       else
         raise UnknownSvcError.new(self, id)
       end
