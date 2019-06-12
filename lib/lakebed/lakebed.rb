@@ -473,7 +473,13 @@ module Lakebed
       # add unmapped write hook
       @mu.hook_add(
         UnicornEngine::UC_HOOK_MEM_WRITE_UNMAPPED, Proc.new do |uc, access, address, size, value|
-          @pending_error = UnmappedWriteError.new(self, [value].pack("Q<"), address)
+          @pending_error = InvalidWriteError.new(self, [value].pack("Q<"), address)
+          @mu.emu_stop
+        end)
+
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_MEM_WRITE_PROT, Proc.new do |uc, access, address, size, value|
+          @pending_error = InvalidWriteError.new(self, [value].pack("Q<"), address)
           @mu.emu_stop
         end)
 
@@ -492,9 +498,9 @@ module Lakebed
       end
     end
     
-    class UnmappedWriteError < GuestExceptionError
+    class InvalidWriteError < GuestExceptionError
       def initialize(emu, value, address)
-        super(emu, "attempted to write #{value.unpack("H*").first} to 0x#{address.to_s(16)}")
+        super(emu, "attempted to write #{value.unpack("H*").first} to 0x#{address.to_s(16)} (pc #{emu.pc.to_s(16)})")
         @value = value
         @address = address
       end

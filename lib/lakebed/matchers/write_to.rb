@@ -66,9 +66,9 @@ module Lakebed
       supports_block_expectations
       
       failure_message do |actual|
-        first_line = "expected that emulator would write #{@match_value.unpack("H*").first} to 0x#{@address.to_s(16)}"
+        first_line = "expected that emulator would write #{@match_content.unpack("H*").first} to 0x#{@address.to_s(16)}"
         if @written_value then
-          second_line = "wrote #{@written_value.unpack("H*").first} instead"
+          second_line = "wrote #{@written_value.unpack("H*").first} instead (pc #{@pc.to_s(16)})"
         else
           second_line = "stuck at #{@pc.to_s(16)}"
         end
