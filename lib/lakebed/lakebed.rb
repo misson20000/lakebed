@@ -347,6 +347,7 @@ module Lakebed
         end
       end
       add_symbol("_dynamic_start", dynamic_section)
+      add_symbol("_dynamic_end", dynamic_section + dynamic.bytesize)
     end
     
     def build
