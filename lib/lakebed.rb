@@ -1,3 +1,7 @@
 require "lakebed/version"
-require "lakebed/lakebed"
+require "lakebed/environment"
+require "lakebed/process"
+require "lakebed/kernel"
+require "lakebed/file/nso"
+require "lakebed/file/kip"
 require "lakebed/helpers"
