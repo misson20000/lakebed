@@ -256,9 +256,14 @@ module Lakebed
         x1(0)
         return
       when InfoId::ResourceLimitHandle,
-           InfoId::IdleTickCount,
-           InfoId::RandomEntropy
+           InfoId::IdleTickCount
         raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
+      when InfoId::RandomEntropy
+        if handle != 0 then
+          raise ResultError.new(0xe401)
+        end
+        x1(@random_entropy[info_sub_id])
+        return
       end
 
       if @kernel.environment.target_firmware >= TargetVersion::PK1_200 then

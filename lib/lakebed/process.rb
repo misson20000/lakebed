@@ -30,6 +30,10 @@ module Lakebed
           Memory::ADDRSPACE_36 # default to 36-bit addrspace on 1.0.0
       @sizes = DEFAULT_SIZES.merge(params[:sizes] || {})
       
+      # chosen by fair dice roll.
+      # guaranteed to be random.
+      @random_entropy = [4, 1, 6, 5]
+      
       @mu = UnicornEngine::Uc.new(UnicornEngine::UC_ARCH_ARM64, UnicornEngine::UC_MODE_ARM)
       @as_mgr = Memory::AddressSpaceManager.new(@params[:address_space_config])
       @handle_table = HandleTable.new(self)
