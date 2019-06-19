@@ -66,7 +66,7 @@ module Lakebed
 
         kernel_caps = file.read(0x80)
         offset = 0
-        contents = [text, rodata, data, bss].each_with_index.map do |seg, i|
+        contents = [text, rodata, data].each_with_index.map do |seg, i|
           content = file.read(seg[:compressed_size])
           if flags[i] == 1 then # compressed
             content = blz_decompress(content, seg[:decompressed_size])
@@ -77,7 +77,7 @@ module Lakebed
           end
 
           if seg[:out_offset] != offset then
-            raise "offset mismatch"
+            raise "offset mismatch (expected 0x#{offset.to_s(16)}, got 0x#{seg[:out_offset].to_s(16)}"
           end
 
           target_size = (content.bytesize + 0xfff) & ~0xfff
@@ -87,11 +87,13 @@ module Lakebed
           content
         end
 
+        data_size = bss[:out_offset] + bss[:decompressed_size] - data[:out_offset]
+        data_size = (data_size + 0xfff) & ~0xfff
+        
         kip = self.new
         kip.add_segment(contents[0], 5) # text
         kip.add_segment(contents[1], 1) # rodata
-        kip.add_segment(contents[2], 3) # data
-        kip.add_segment(contents[3], 3) # bss
+        kip.add_segment(contents[2] + (0.chr * (data_size - contents[2].bytesize)), 3) # data + bss
         return kip
       end
 
