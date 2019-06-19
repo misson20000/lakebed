@@ -24,6 +24,8 @@ module Lakebed
         svc_output_debug_string
       when 0x29
         svc_get_info
+      when 0x41
+        svc_accept_session
       when 0x70
         svc_create_port
       when 0x71
@@ -159,7 +161,7 @@ module Lakebed
       end
 
       suspension = @current_thread.suspend("connecting to named port \"#{name}\"")
-      port.connect do |sess|
+      port.client.connect do |sess|
         suspension.release do
           x0(0)
           x1(@handle_table.insert(sess))
@@ -304,6 +306,12 @@ module Lakebed
       x0(0xf001) # let this one past strict error handling
     end
 
+    def svc_accept_session
+      server = @handle_table.get_strict(x1, Port::Server)
+      x1(@handle_table.insert(server.accept))
+      x0(0)
+    end
+    
     def svc_create_port
       # TODO: make sure this is right...
       if x3 != 0 then
