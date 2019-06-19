@@ -51,6 +51,7 @@ module Lakebed
     end
     
     attr_reader :process
+    attr_reader :priority
     attr_accessor :pc
     
     def start

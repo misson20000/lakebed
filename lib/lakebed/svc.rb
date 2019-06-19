@@ -12,6 +12,8 @@ module Lakebed
         svc_query_memory
       when 0xb
         svc_sleep_thread
+      when 0xc
+        svc_get_thread_priority
       when 0x18
         svc_wait_synchronization
       when 0x19
@@ -98,6 +100,12 @@ module Lakebed
 
     def svc_sleep_thread
       puts "sleep #{x0}"
+    end
+
+    def svc_get_thread_priority
+      thread = @handle_table.get_strict(x1, LKThread)
+      x0(0)
+      x1(thread.priority)
     end
 
     def svc_wait_synchronization
