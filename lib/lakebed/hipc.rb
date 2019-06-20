@@ -69,15 +69,29 @@ module Lakebed
       def initialize
         @client = Client.new(self)
         @server = Server.new(self)
+        @closed = false
         @pending_requests = Queue.new
       end
 
       def inspect
         "Session"
       end
+
+      def closed?
+        @closed
+      end
+
+      def close
+        @closed = true
+        while !@pending_requests.empty? do
+          @pending_requests.pop[:block].call(nil)
+        end
+        @server.signal
+      end
       
       attr_reader :client
       attr_reader :server
+      attr_reader :closed
       attr_reader :pending_requests
 
       class Client
@@ -102,9 +116,17 @@ module Lakebed
         end
 
         def is_signaled?
-          !@session.pending_requests.empty?
+          @session.closed? || !@session.pending_requests.empty?
         end
 
+        def close
+          @session.close
+        end
+
+        def closed?
+          @session.closed?
+        end
+        
         def receive_message(process, buffer, addr)
           if @current_reception != nil then
             raise "attempted to receive a message before replying"

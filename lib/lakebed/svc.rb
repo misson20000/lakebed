@@ -15,6 +15,8 @@ module Lakebed
         svc_sleep_thread
       when 0xc
         svc_get_thread_priority
+      when 0x16
+        svc_close_handle
       when 0x18
         svc_wait_synchronization
       when 0x19
@@ -111,6 +113,11 @@ module Lakebed
       x1(thread.priority)
     end
 
+    def svc_close_handle
+      @handle_table.close(x0)
+      x0(0)
+    end
+    
     def svc_wait_synchronization
       handles = @mu.mem_read(x1, x2 * 4).unpack("L<*")
       timeout = x3
@@ -353,18 +360,24 @@ module Lakebed
       suspension = @current_thread.suspend("svcReplyAndReceive")
       procs = []
       earlywake = true
+      puts "svcReplyAndReceive:"
       objects.each_with_index.map do |obj, i|
+        puts "waiting on #{obj}"
         procs.push(
           [
             obj,
             obj.wait do
               suspension.release do
-                if obj.is_a? HIPC::Session::Server then
-                  obj.receive_message(self, @current_thread.tls.addr, 0x100)
-                  puts "receiving:"
-                  @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
-                end
                 x0(0)
+                if obj.is_a? HIPC::Session::Server then
+                  if obj.closed? then
+                    x0(0xf601)
+                  else
+                    obj.receive_message(self, @current_thread.tls.addr, 0x100)
+                    puts "receiving:"
+                    @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
+                  end
+                end
                 x1(i)
               end
               procs.each do |pr|
