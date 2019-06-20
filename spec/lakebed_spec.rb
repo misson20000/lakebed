@@ -55,17 +55,24 @@ RSpec.describe Lakebed do
 
     session = nil
     k.named_ports["sm:"].client.connect do |sess|
-      session = Lakebed::CMIF::ClientSession.new(sess)
+      session = Lakebed::CMIF::ClientSessionObject.new(sess)
     end
     k.continue
 
     expect(session).not_to be_nil
 
-    session.send(
-      Lakebed::CMIF::Message.build(0) do
-        pid
-        u64
-      end) do |response|
+    session.send_message_sync(
+      k,
+      Lakebed::CMIF::Message.build_rq(0) do
+        pid 0
+      end).unpack do
     end
+
+    expect(
+      session.send_message_sync(
+        k,
+        Lakebed::CMIF::Message.build_rq(1) do
+          u64("fsp-srv\x00".unpack("Q<")[0])
+        end)).to reply_with_error(0xaa01)
   end
 end

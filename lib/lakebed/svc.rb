@@ -1,3 +1,4 @@
+require "hexdump"
 require_relative "error.rb"
 require_relative "sync.rb"
 require_relative "hipc.rb"
@@ -28,6 +29,8 @@ module Lakebed
         svc_get_info
       when 0x41
         svc_accept_session
+      when 0x43
+        svc_reply_and_receive
       when 0x70
         svc_create_port
       when 0x71
@@ -320,9 +323,60 @@ module Lakebed
     end
 
     def svc_accept_session
-      server = @handle_table.get_strict(x1, Port::Server)
+      server = @handle_table.get_strict(x1, HIPC::Port::Server)
       x1(@handle_table.insert(server.accept))
       x0(0)
+    end
+
+    def svc_reply_and_receive
+      handles = @mu.mem_read(x1, x2 * 4).unpack("L<*")
+      timeout = x4
+
+      if x3 != 0 then
+        puts "replying:"
+        @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
+        reply_session = @handle_table.get_strict(x3, HIPC::Session::Server)
+        reply_session.reply_message(self, @current_thread.tls.addr, 0x100)
+      end
+      
+      objects = handles.map do |h|
+        @handle_table.get_strict(h, [HIPC::Port::Server, HIPC::Session::Server])
+      end
+
+      if objects.size == 0 then
+        # timeout.
+        # not an error, so we don't use ResultError.
+        x0(0xea01)
+        return
+      end
+      
+      suspension = @current_thread.suspend("svcReplyAndReceive")
+      procs = []
+      earlywake = true
+      objects.each_with_index.map do |obj, i|
+        procs.push(
+          [
+            obj,
+            obj.wait do
+              suspension.release do
+                if obj.is_a? HIPC::Session::Server then
+                  obj.receive_message(self, @current_thread.tls.addr, 0x100)
+                  puts "receiving:"
+                  @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
+                end
+                x0(0)
+                x1(i)
+              end
+              procs.each do |pr|
+                pr[0].unwait(pr[1])
+              end
+              if earlywake then
+                return
+              end
+            end
+          ])
+      end
+      earlywake = false
     end
     
     def svc_create_port
@@ -336,7 +390,7 @@ module Lakebed
         raise ResultError.new(0xee01)
       end
 
-      port = Port.new(name, x2)
+      port = HIPC::Port.new(name, x2)
       x0(0)
       x1(@handle_table.insert(port.server))
       x2(@handle_table.insert(port.client))
@@ -349,7 +403,7 @@ module Lakebed
         raise ResultError.new(0xee01)
       end
 
-      port = Port.new(name, x2)
+      port = HIPC::Port.new(name, x2)
       @kernel.named_ports[name] = port
       x0(0)
       x1(@handle_table.insert(port.server))

@@ -53,6 +53,7 @@ module Lakebed
     attr_reader :process
     attr_reader :priority
     attr_accessor :pc
+    attr_reader :tls
     
     def start
       if @suspension != @fresh_suspension || @fresh_suspension == nil then

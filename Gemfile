@@ -8,3 +8,5 @@ gemspec
 gem "pry", "~> 0.12.2"
 
 gem "rspec", "~> 3.8"
+
+gem "hexdump", "~> 0.2.3"

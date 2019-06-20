@@ -140,8 +140,14 @@ module Lakebed
           end
           obj = @handles[handle]
         end
+
+        if !type.is_a? Array then
+          type = [type]
+        end
         
-        if !obj.is_a?(type) then
+        if !type.any? do |t|
+             obj.is_a?(t)
+           end then
           raise ResultError.new(0xe401, "accessing handle 0x#{handle.to_s(16)}, expected a #{type}, got #{obj}")
         end
         return obj
