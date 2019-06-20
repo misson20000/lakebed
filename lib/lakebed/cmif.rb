@@ -46,7 +46,7 @@ module Lakebed
                    {:pid => msg.pid,
                     :copy_handles => msg.copy_handles,
                     :move_handles => msg.move_handles} :
-                   {},
+                   nil,
                  :x_descriptors => [],
                  :a_descriptors => [],
                  :b_descriptors => [],
@@ -62,16 +62,25 @@ module Lakebed
 
       def send_message(msg)
         @ksession.send_message(to_hipc(msg)) do |reply|
-          yield from_hipc(reply)
+          yield reply ? from_hipc(reply) : nil
         end
       end
 
       def send_message_sync(kernel, msg)
+        cmif_reply = nil
         @ksession.send_message(to_hipc(msg)) do |reply|
-          return from_hipc(reply)
+          if !reply then
+            raise "session closed"
+          end
+          # can't return straight out of block without
+          # short-circuiting vital svcR&R logic...
+          cmif_reply = from_hipc(reply)
         end
         kernel.continue
-        raise "server did not reply"
+        if !cmif_reply then
+          raise "server did not reply"
+        end
+        return cmif_reply
       end
     end
 
