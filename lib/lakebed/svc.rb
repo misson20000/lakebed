@@ -43,6 +43,8 @@ module Lakebed
         svc_create_port
       when 0x71
         svc_manage_named_port
+      when 0x72
+        svc_connect_to_port
       when 0x7f
         svc_call_secure_monitor
       else
@@ -531,6 +533,17 @@ module Lakebed
       @kernel.named_ports[name] = port
       x0(0)
       x1(@handle_table.insert(port.server))
+    end
+
+    def svc_connect_to_port
+      port = @handle_table.get_strict(x1, HIPC::Port::Client)
+      suspension = LKThread::Suspension.new(@current_thread, "connecting to port")
+      port.connect do |sess|
+        suspension.release do
+          x0(0)
+          x1(@handle_table.insert(sess))
+        end
+      end
     end
     
     def svc_call_secure_monitor
