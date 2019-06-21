@@ -286,11 +286,30 @@ module Lakebed
 
       if @kernel.environment.target_firmware >= TargetVersion::PK1_200 then
         case info_id
-        when InfoId::AddressSpaceBaseAddr,
-             InfoId::AddressSpaceSize,
-             InfoId::StackRegionBaseAddr,
-             InfoId::StackRegionSize
-          raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
+        when InfoId::AddressSpaceBaseAddr
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(object.as_mgr.config.base_addr)
+          return
+        when InfoId::AddressSpaceSize
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(object.as_mgr.config.end_addr - object.as_mgr.config.base_addr)
+          return
+        when InfoId::StackRegionBaseAddr
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(object.stack_region.addr)
+          return
+        when InfoId::StackRegionSize
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(object.stack_region.size)
+          return
         end
       end
 
