@@ -182,6 +182,7 @@ module Lakebed
       @kernel.scheduler.add_thread(main_thread)
     end
 
+    attr_reader :kernel
     attr_reader :pid
     attr_reader :params
     attr_reader :sizes

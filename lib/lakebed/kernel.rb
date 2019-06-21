@@ -31,6 +31,7 @@ module Lakebed
       @named_ports = Hash.new
       @secure_monitor = HLE::SecureMonitor::Exosphere.new(environment)
       @next_pid = 0x50
+      @next_tid = 0x250
     end
 
     attr_reader :environment
@@ -43,6 +44,12 @@ module Lakebed
       pid = @next_pid
       @next_pid+= 1
       return pid
+    end
+
+    def allocate_tid
+      tid = @next_tid
+      @next_tid+= 1
+      return tid
     end
     
     def continue

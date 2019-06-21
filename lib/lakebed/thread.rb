@@ -9,6 +9,7 @@ module Lakebed
     
     def initialize(proc, params)
       @process = proc
+      @tid = @process.kernel.allocate_tid
       if !params.key?(:entry) then raise "need to specify entry point" end
       if !params.key?(:sp) then raise "need to specify stack pointer" end
       if !params.key?(:tls) then
@@ -51,6 +52,7 @@ module Lakebed
     end
     
     attr_reader :process
+    attr_reader :tid
     attr_reader :priority
     attr_accessor :pc
     attr_reader :tls

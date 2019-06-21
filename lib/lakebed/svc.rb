@@ -25,6 +25,8 @@ module Lakebed
         svc_connect_to_named_port
       when 0x24
         svc_get_process_id
+      when 0x25
+        svc_get_thread_id
       when 0x27
         svc_output_debug_string
       when 0x29
@@ -191,7 +193,12 @@ module Lakebed
       x1(@handle_table.get_strict(x1, Process).pid)
       x0(0)
     end
-    
+
+    def svc_get_thread_id
+      x1(@handle_table.get_strict(x1, LKThread).tid)
+      x0(0)
+    end
+
     def svc_output_debug_string
       puts "DEBUG: " + @mu.mem_read(x0, x1)
     end
