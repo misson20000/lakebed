@@ -90,10 +90,6 @@ module Lakebed
         @raw_data_offset = (0x10 - msg.raw_data_misalignment) & 0xf
         @fields = {}
 
-        if msg.type != 0 then
-          raise "invalid response type"
-        end
-        
         if msg.raw_data.byteslice(@raw_data_offset, 4) != "SFCO" then
           raise "invalid response magic"
         end
