@@ -268,9 +268,18 @@ module Lakebed
         end
         x1(object.heap_region.size)
         return
-      when InfoId::TotalMemoryAvailable,
-           InfoId::TotalMemoryUsage
-        raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
+      when InfoId::TotalMemoryAvailable
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(512 * 1024 * 1024) # TODO: come up with something more believeable
+          return        
+      when InfoId::TotalMemoryUsage
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(0) # TODO: come up with something more believeable
+          return        
       when InfoId::IsCurrentProcessBeingDebugged
         if handle != 0 then
           raise ResultError.new(0xe401)
