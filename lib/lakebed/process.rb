@@ -37,6 +37,8 @@ module Lakebed
       @mu = UnicornEngine::Uc.new(UnicornEngine::UC_ARCH_ARM64, UnicornEngine::UC_MODE_ARM)
       @as_mgr = Memory::AddressSpaceManager.new(@params[:address_space_config])
       @handle_table = HandleTable.new(self)
+      @threads = []
+      @condvar_suspensions = []
       
       @alias_region = @as_mgr.alloc(
         @sizes[:alias_region],
@@ -179,6 +181,7 @@ module Lakebed
         x0(0) # userland exception handling
         x1(main_thread_handle)
       end
+      @threads.push(main_thread)
       @kernel.scheduler.add_thread(main_thread)
     end
 

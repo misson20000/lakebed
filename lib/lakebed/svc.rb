@@ -21,6 +21,8 @@ module Lakebed
         svc_wait_synchronization
       when 0x19
         svc_cancel_synchronization
+      when 0x1d
+        svc_signal_process_wide_key
       when 0x1f
         svc_connect_to_named_port
       when 0x24
@@ -165,6 +167,27 @@ module Lakebed
       
       thread = @handle_table.get_strict(x0, LKThread)
       thread.cancel_synchronization
+      x0(0)
+    end
+
+    def svc_signal_process_wide_key
+      condvar = x0
+      num_threads_to_wake = x1
+
+      suspensions = @condvar_suspensions.select do |s|
+        s.condvar == condvar
+      end
+
+      if num_threads_to_wake != -1 then
+        suspensions = suspensions[0, num_threads_to_wake]
+      end
+
+      suspensions.each do |s|
+        s.release do
+          x0(0)
+        end
+      end
+
       x0(0)
     end
     
