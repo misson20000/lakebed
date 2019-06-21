@@ -16,9 +16,9 @@ module Lakebed
             case args[0]
             when ConfigItem::ExosphereVersion
               config =
-                ((@environment.ams_release_major & 0xff) << 32) |
-                ((@environment.ams_release_micro & 0xff) << 24) |
-                ((@environment.ams_release_minor & 0xff) << 16) |
+                ((@environment.ams_version[0] & 0xff) << 32) |
+                ((@environment.ams_version[1] & 0xff) << 24) |
+                ((@environment.ams_version[2] & 0xff) << 16) |
                 ((@environment.target_firmware.ams_target & 0xff) << 8) |
                 ((@environment.master_key_rev & 0xff) << 0)
             else
