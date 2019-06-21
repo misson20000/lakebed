@@ -131,7 +131,7 @@ module Lakebed
       puts "svcWaitSynchronization(\n  " +
            (objects.map do |obj| obj.inspect end).join(",\n  ") + ")"
       
-      suspension = @current_thread.suspend("svcWaitSynchronization")
+      suspension = LKThread::Suspension.new(@current_thread, "svcWaitSynchronization")
       procs = []
       earlywake = true
       objects.each_with_index.map do |obj, i|
@@ -180,7 +180,7 @@ module Lakebed
         raise ResultError.new(0xf201, "trying to connect to named port #{name}")
       end
 
-      suspension = @current_thread.suspend("connecting to named port \"#{name}\"")
+      suspension = LKThread::Suspension.new(@current_thread, "connecting to named port \"#{name}\"")
       port.client.connect do |sess|
         suspension.release do
           x0(0)
@@ -392,7 +392,7 @@ module Lakebed
         return
       end
       
-      suspension = @current_thread.suspend("svcReplyAndReceive")
+      suspension = LKThread::Suspension.new(@current_thread, "svcReplyAndReceive")
       procs = []
       earlywake = true
       puts "svcReplyAndReceive:"

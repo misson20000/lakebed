@@ -42,6 +42,7 @@ module Lakebed
       def initialize(thread, description)
         @thread = thread
         @description = description
+        @thread.suspend(self)
       end
 
       attr_reader :description
@@ -94,13 +95,13 @@ module Lakebed
       end
     end
 
-    def suspend(desc)
+    def suspend(suspension)
       if @suspension then
         raise "attempt to double-suspend thread (current: #{@suspension.description}, attempted: #{desc})"
       end
 
-      puts "suspending (#{desc})"
-      @suspension = Suspension.new(self, desc)
+      puts "suspending (#{suspension.description})"
+      @suspension = suspension
       @active = false
       @status = :suspended
       @suspension
