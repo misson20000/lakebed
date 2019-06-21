@@ -143,6 +143,7 @@ module Lakebed
         end
 
         def to_message
+          align(4)
           Message.new(@type, @magic, @cmdid, @pid, @copy_handles, @move_handles, @data, @buffers)
         end
 
@@ -158,6 +159,16 @@ module Lakebed
         def u64(val)
           align(8)
           @data+= [val].pack("Q<")
+        end
+
+        def u32(val)
+          align(4)
+          @data+= [val].pack("L<")
+        end
+
+        def u8(val)
+          align(1)
+          @data+= [val].pack("C")
         end
 
         def align(alignment)
