@@ -81,13 +81,19 @@ module Lakebed
     UserExceptionContextAddr = 20
 
     # 6.0.0+
-    TotalMemoryAvailableWIthoutMmHeap = 21
+    TotalMemoryAvailableWithoutMmHeap = 21
     TotalMemoryUsedWithoutMmHeap = 22
 
     # ???
     Performance = 0xF0000002
   end
 
+  module SystemInfoId
+    TotalMemorySize = 0
+    CurrentMemorySize = 1
+    PrivilegedProcessId = 2
+  end
+  
   class TargetVersion
     def initialize(target, numeric)
       @target = target

@@ -30,6 +30,8 @@ module Lakebed
       @strict_svcs = false
       @named_ports = Hash.new
       @secure_monitor = HLE::SecureMonitor::Exosphere.new(environment)
+      # on <4.0.0, KIPs start at PID 0 I think?
+      # on 5.0.0+, KIPs start at PID 1
       @next_pid = 0x50
       @next_tid = 0x250
     end
@@ -40,6 +42,14 @@ module Lakebed
     attr_reader :named_ports
     attr_accessor :secure_monitor
 
+    def priveleged_lower_bound
+      1
+    end
+
+    def priveleged_upper_bound
+      10
+    end
+    
     def allocate_pid
       pid = @next_pid
       @next_pid+= 1

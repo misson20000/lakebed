@@ -37,6 +37,8 @@ module Lakebed
         svc_accept_session
       when 0x43
         svc_reply_and_receive
+      when 0x6f
+        svc_get_system_info
       when 0x70
         svc_create_port
       when 0x71
@@ -364,7 +366,18 @@ module Lakebed
       if @kernel.environment.target_firmware >= TargetVersion::PK1_400 && @kernel.environment.target_firmware < TargetVersion::PK1_500 then
         case info_id
         when InfoId::PrivilegedProcessId
-          raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
+          if handle != 0 then
+            raise ResultError.new(0xe401)
+          end
+          case info_sub_id
+          when 0
+            x1(@kernel.priveleged_lower_bound)
+          when 1
+            x1(@kernel.priveleged_upper_bound)
+          else
+            raise "invalid sub id"
+          end
+          return
         end
       end
 
@@ -377,9 +390,18 @@ module Lakebed
 
       if @kernel.environment.target_firmware >= TargetVersion::PK1_600 then
         case info_id
-        when InfoId::TotalMemoryAvailableWithoutMmHeap,
-             InfoId::TotalMemoryUsedWithoutMmHeap
-          raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
+        when InfoId::TotalMemoryAvailableWithoutMmHeap
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(512 * 1024 * 1024) # TODO: come up with something more believeable
+          return        
+        when InfoId::TotalMemoryUsedWithoutMmHeap
+          if !object.is_a?(Process) then
+            raise ResultError.new(0xe401)
+          end
+          x1(0) # TODO: come up with something more believeable
+          return        
         end
       end
 
@@ -448,6 +470,37 @@ module Lakebed
           ])
       end
       earlywake = false
+    end
+
+    def svc_get_system_info
+      info_id = x1
+      handle = x2
+      info_sub_id = x3
+
+      if @kernel.environment.target_firmware.numeric < TargetVersion::PK1_500 then
+        raise "svcGetSystemInfo doesn't exist before 5.0.0"
+      end
+      
+      if handle != 0 then
+        raise ResultError.new(0xe401)
+      end
+
+      x0(0)
+
+      case info_id
+      when SystemInfoId::PrivilegedProcessId
+        case info_sub_id
+        when 0
+            x1(@kernel.priveleged_lower_bound)
+        when 1
+          x1(@kernel.priveleged_upper_bound)
+        else
+          raise "invalid sub id"
+        end
+        return
+      else
+        raise "unknown system info id: #{info_id}"
+      end
     end
     
     def svc_create_port
