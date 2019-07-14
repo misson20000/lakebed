@@ -201,6 +201,16 @@ module Lakebed
           "expected that reply would have error code 0x#{expected.to_s(16)}, got 0x#{actual.result_code.to_s(16)}"
         end
       end
+
+      RSpec::Matchers.define :reply_ok do
+        match do |unpacker|
+          return unpacker.result_code == 0
+        end
+
+        failure_message do |actual|
+          "expected that reply would be OK, got 0x#{actual.result_code.to_s(16)} instead"
+        end
+      end
     end
   end
 end
