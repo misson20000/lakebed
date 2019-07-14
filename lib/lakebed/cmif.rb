@@ -66,7 +66,7 @@ module Lakebed
         end
       end
 
-      def send_message_sync(kernel, msg)
+      def send_message_sync(kernel, msg, &block)
         cmif_reply = nil
         @ksession.send_message(to_hipc(msg)) do |reply|
           if !reply then
@@ -80,7 +80,12 @@ module Lakebed
         if !cmif_reply then
           raise "server did not reply"
         end
-        return cmif_reply
+        
+        if block then
+          return cmif_reply.unpack(&block)
+        else
+          return cmif_reply
+        end
       end
     end
 
@@ -90,6 +95,8 @@ module Lakebed
         @raw_data_offset = (0x10 - msg.raw_data_misalignment) & 0xf
         @fields = {}
 
+        @move_handle_index = 0
+        
         if msg.raw_data.byteslice(@raw_data_offset, 4) != "SFCO" then
           raise "invalid response magic"
         end
@@ -98,8 +105,23 @@ module Lakebed
       end
 
       attr_reader :result_code
+
+      def move_handle(tag)
+        if @move_handle_index >= @msg.handle_descriptor[:move_handles].size then
+          raise "not enough move handles"
+        end
+        mh = @msg.handle_descriptor[:move_handles][@move_handle_index]
+        if tag then
+          @fields[tag] = mh
+          @move_handle_index+= 1
+        end
+        mh
+      end
       
       def unpack(&block)
+        if(@result_code != 0) then
+          raise "result (0x#{@result_code.to_s(16)}) was not OK"
+        end
         instance_eval(&block)
         @fields
       end
