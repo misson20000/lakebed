@@ -207,13 +207,8 @@ module Lakebed
         raise ResultError.new(0xf201, "trying to connect to named port #{name}")
       end
 
-      suspension = LKThread::Suspension.new(@current_thread, "connecting to named port \"#{name}\"")
-      port.client.connect do |sess|
-        suspension.release do
-          x0(0)
-          x1(@handle_table.insert(sess))
-        end
-      end
+      x0(0)
+      x1(@handle_table.insert(port.client.connect))
     end
 
     def svc_get_process_id
@@ -537,13 +532,8 @@ module Lakebed
 
     def svc_connect_to_port
       port = @handle_table.get_strict(x1, HIPC::Port::Client)
-      suspension = LKThread::Suspension.new(@current_thread, "connecting to port")
-      port.connect do |sess|
-        suspension.release do
-          x0(0)
-          x1(@handle_table.insert(sess))
-        end
-      end
+      x0(0)
+      x1(@handle_table.insert(port.connect))
     end
     
     def svc_call_secure_monitor

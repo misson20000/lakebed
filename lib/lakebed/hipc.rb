@@ -23,9 +23,11 @@ module Lakebed
       attr_reader :server
       attr_reader :pending_connections
       
-      def connect(&proc)
-        @pending_connections.push(proc)
+      def connect
+        session = Session.new
+        @pending_connections.push(session)
         server.signal
+        session
       end
       
       class Client < Waitable
@@ -35,11 +37,11 @@ module Lakebed
         end
 
         def is_signaled?
-          @port.sessions.length < @port.max_sessions
+          (@port.sessions.length + @port.pending_connections.length) < @port.max_sessions
         end
 
-        def connect(&proc)
-          @port.connect(&proc)
+        def connect
+          @port.connect.client
         end
       end
 
@@ -57,9 +59,9 @@ module Lakebed
           if @port.pending_connections.empty? then
             raise ResultError.new(0xf201)
           end
-          conn = @port.pending_connections.pop
-          session = Session.new
-          conn.call(session.client)
+          session = @port.pending_connections.pop
+          session.accept
+          @port.sessions.push(session)
           session.server
         end
       end
@@ -69,6 +71,7 @@ module Lakebed
       def initialize
         @client = Client.new(self)
         @server = Server.new(self)
+        @accepted = false
         @closed = false
         @pending_requests = Queue.new
       end
@@ -77,6 +80,10 @@ module Lakebed
         "Session"
       end
 
+      def accept
+        @accepted = true
+      end
+      
       def closed?
         @closed
       end
@@ -91,6 +98,7 @@ module Lakebed
       
       attr_reader :client
       attr_reader :server
+      attr_reader :accepted
       attr_reader :closed
       attr_reader :pending_requests
 
