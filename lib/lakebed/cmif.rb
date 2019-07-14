@@ -68,15 +68,20 @@ module Lakebed
 
       def send_message_sync(kernel, msg, &block)
         cmif_reply = nil
+        session_closed = false
         @ksession.send_message(to_hipc(msg)) do |reply|
           if !reply then
-            raise "session closed"
+            session_closed = true
+            next
           end
           # can't return straight out of block without
           # short-circuiting vital svcR&R logic...
           cmif_reply = from_hipc(reply)
         end
         kernel.continue
+        if session_closed then
+          raise "server closed session (0xf601)"
+        end
         if !cmif_reply then
           raise "server did not reply"
         end
