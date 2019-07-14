@@ -24,10 +24,15 @@ module Lakebed
       attr_reader :pending_connections
       
       def connect
-        session = Session.new
+        session = Session.new(self)
         @pending_connections.push(session)
         server.signal
         session
+      end
+
+      def release_session(sess)
+        @sessions.delete(sess)
+        @client.signal
       end
       
       class Client < Waitable
@@ -49,6 +54,9 @@ module Lakebed
         end
 
         def connect
+          if !is_signaled? then
+            raise ResultError.new(0xe01, "session count exceeded")
+          end
           @port.connect.client
         end
       end
@@ -78,12 +86,13 @@ module Lakebed
     end
 
     class Session
-      def initialize
+      def initialize(port=nil)
         @client = Client.new(self)
         @server = Server.new(self)
         @accepted = false
         @closed = false
         @pending_requests = Queue.new
+        @port = port
       end
 
       def inspect
@@ -99,11 +108,17 @@ module Lakebed
       end
 
       def close
-        @closed = true
-        while !@pending_requests.empty? do
-          @pending_requests.pop[:block].call(nil)
+        if !@closed then
+          @closed = true
+          while !@pending_requests.empty? do
+            @pending_requests.pop[:block].call(nil)
+          end
+          @server.signal
+          if @port then
+            # TODO: does this wait for both sides to close?
+            @port.release_session(self)
+          end
         end
-        @server.signal
       end
       
       attr_reader :client
@@ -119,6 +134,10 @@ module Lakebed
 
         attr_reader :session
 
+        def close
+          @session.close
+        end
+        
         def send_message(msg, &block)
           @session.pending_requests.push(
             {
