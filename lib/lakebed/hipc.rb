@@ -128,6 +128,9 @@ module Lakebed
         end
 
         def close
+          if @current_reception then
+            @current_reception.reply(nil)
+          end
           @session.close
         end
 
