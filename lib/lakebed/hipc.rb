@@ -154,8 +154,15 @@ module Lakebed
                 handle_descriptor[:pid] = process.pid
                 # TODO: ams pid spoofing
               end
-              handle_descriptor[:copy_handles] = msg.read(4 * ((h >> 1) & 0xf)).unpack("L<*")
-              handle_descriptor[:move_handles] = msg.read(4 * ((h >> 5) & 0xf)).unpack("L<*")
+              copy_handles = msg.read(4 * ((h >> 1) & 0xf)).unpack("L<*")
+              move_handles = msg.read(4 * ((h >> 5) & 0xf)).unpack("L<*")
+              handle_descriptor[:copy_handles] = copy_handles.map do |h|
+                process.handle_table.get_strict(h, nil, true, true)
+              end
+              handle_descriptor[:move_handles] = move_handles.map do |h|
+                process.handle_table.get_strict(h, nil, true, true)
+                # TODO: remove from source process handle table?
+              end
             else
               handle_descriptor = nil
             end
@@ -242,13 +249,19 @@ module Lakebed
           if @handle_descriptor[:move_handles].size > 15 then
             raise "too many move handles"
           end
-          h|= @handle_descriptor[:copy_handles].size << 1
-          h|= @handle_descriptor[:move_handles].size << 5
+          copy_handles = @handle_descriptor[:copy_handles].map do |object|
+            proc.handle_table.insert(object)
+          end
+          move_handles = @handle_descriptor[:move_handles].map do |object|
+            proc.handle_table.insert(object)
+          end
+          h|= copy_handles.size << 1
+          h|= move_handles.size << 5
           message+= [h].pack("L<")
           if @handle_descriptor[:pid] then
             message+= [@handle_descriptor[:pid]].pack("Q<")
           end
-          message+= (@handle_descriptor[:copy_handles] + @handle_descriptor[:move_handles]).pack("L<*")
+          message+= (copy_handles + move_handles).pack("L<*")
         end
 
         # TODO: buffer descriptors

@@ -131,11 +131,13 @@ module Lakebed
         @handles[handle]
       end
 
-      def get_strict(handle, type, pseudo=true)
+      def get_strict(handle, type, pseudo=true, allow_zero=false)
         if pseudo && handle == 0xffff8001 then
           obj = @proc
         elsif pseudo && handle == 0xffff8000 then
           obj = @proc.current_thread
+        elsif handle == 0 && allow_zero then
+          obj = nil
         else
           if !@handles.key?(handle) then
             raise ResultError.new(0xe401, "no such handle 0x#{handle.to_s(16)}")
@@ -143,15 +145,18 @@ module Lakebed
           obj = @handles[handle]
         end
 
-        if !type.is_a? Array then
-          type = [type]
+        if type then
+          if !type.is_a? Array then
+            type = [type]
+          end
+        
+          if !type.any? do |t|
+               obj.is_a?(t)
+             end then
+            raise ResultError.new(0xe401, "accessing handle 0x#{handle.to_s(16)}, expected a #{type}, got #{obj}")
+          end
         end
         
-        if !type.any? do |t|
-             obj.is_a?(t)
-           end then
-          raise ResultError.new(0xe401, "accessing handle 0x#{handle.to_s(16)}, expected a #{type}, got #{obj}")
-        end
         return obj
       end
       
