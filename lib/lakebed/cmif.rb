@@ -111,11 +111,18 @@ module Lakebed
 
       attr_reader :result_code
 
-      def move_handle(tag)
+      def move_handle(tag, type=nil)
         if @move_handle_index >= @msg.handle_descriptor[:move_handles].size then
           raise "not enough move handles"
         end
         mh = @msg.handle_descriptor[:move_handles][@move_handle_index]
+        
+        if type != nil then
+          if !mh.is_a?(type) then
+            raise "expected a #{type}, got #{mh}"
+          end
+        end
+        
         if tag then
           @fields[tag] = mh
           @move_handle_index+= 1
