@@ -34,8 +34,16 @@ module Lakebed
         def initialize(port)
           super()
           @port = port
+          @closed = false
         end
 
+        attr_reader :port
+        attr_reader :closed
+
+        def close
+          @closed = true
+        end
+        
         def is_signaled?
           (@port.sessions.length + @port.pending_connections.length) < @port.max_sessions
         end
@@ -51,6 +59,8 @@ module Lakebed
           @port = port
         end
 
+        attr_reader :port
+        
         def is_signaled?
           !@port.pending_connections.empty?
         end
@@ -107,6 +117,8 @@ module Lakebed
           @session = session
         end
 
+        attr_reader :session
+
         def send_message(msg, &block)
           @session.pending_requests.push(
             {
@@ -123,6 +135,8 @@ module Lakebed
           @current_reception = nil
         end
 
+        attr_reader :session
+        
         def is_signaled?
           @session.closed? || !@session.pending_requests.empty?
         end
