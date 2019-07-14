@@ -92,8 +92,29 @@ module Lakebed
           return cmif_reply
         end
       end
-    end
 
+      def close_sync(kernel)
+        closed = false
+        puts "close sync..."
+        @ksession.send_message(
+          to_hipc(
+            Lakebed::CMIF::Message.build_rq(0) do
+              type(2)
+            end)) do |reply|
+          if reply then
+            raise "got reply to close message?"
+          end
+          closed = true
+        end
+        
+        kernel.continue
+        
+        if !closed then
+          raise "server unresponsive"
+        end
+      end
+    end
+    
     class Unpacker
       def initialize(msg)
         @msg = msg
