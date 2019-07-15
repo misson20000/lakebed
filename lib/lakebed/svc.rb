@@ -136,8 +136,9 @@ module Lakebed
 
       puts "svcWaitSynchronization(\n  " +
            (objects.map do |obj| obj.inspect end).join(",\n  ") + ")"
-      
-      suspension = LKThread::Suspension.new(@current_thread, "svcWaitSynchronization")
+
+      thread = @current_thread
+      suspension = LKThread::Suspension.new(thread, "svcWaitSynchronization")
       procs = []
       earlywake = true
       objects.each_with_index.map do |obj, i|
@@ -145,7 +146,7 @@ module Lakebed
           [
             obj,
             obj.wait do
-              puts "got signal from #{obj}"
+              puts "svcWaitSync(#{thread}) got signal from #{obj}"
               suspension.release do
                 x0(0)
                 x1(i)

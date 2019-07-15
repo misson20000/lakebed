@@ -38,6 +38,10 @@ module Lakebed
       @current = false
     end
 
+    def to_s
+      "LKThread<#{process.name}(0x#{process.pid.to_s(16)}), thread 0x#{@tid.to_s(16)}>"
+    end
+    
     class Suspension
       def initialize(thread, description)
         @thread = thread
@@ -73,7 +77,7 @@ module Lakebed
         raise "attempt to commit non-current thread"
       end
       
-      puts "committing thread"
+      puts "committing #{self}"
       @sp = @process.mu.reg_read(UnicornEngine::UC_ARM64_REG_SP)
       @current = false
     end
@@ -83,7 +87,7 @@ module Lakebed
         raise "attempt to restore current thread"
       end
       
-      puts "restoring thread"
+      puts "restoring #{self}"
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_SP, @sp)
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_TPIDRRO_EL0, @tls.addr)
 
@@ -100,7 +104,7 @@ module Lakebed
         raise "attempt to double-suspend thread (current: #{@suspension.description}, attempted: #{desc})"
       end
 
-      puts "suspending (#{suspension.description})"
+      puts "suspending #{self} (#{suspension.description})"
       @suspension = suspension
       @active = false
       @status = :suspended

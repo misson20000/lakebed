@@ -29,6 +29,7 @@ module Lakebed
           Memory::ADDRSPACE_39 : # default to 39-bit addrspace on 2.0.0+
           Memory::ADDRSPACE_36 # default to 36-bit addrspace on 1.0.0
       @sizes = DEFAULT_SIZES.merge(params[:sizes] || {})
+      @name = params[:name] || "unnamed"
       
       # chosen by fair dice roll.
       # guaranteed to be random.
@@ -90,7 +91,7 @@ module Lakebed
           end
 
           if @current_thread.suspended? then
-            puts "thread has been suspended..."
+            puts "#{@current_thread} has been suspended..."
             @mu.emu_stop
           end
         end)
@@ -194,6 +195,7 @@ module Lakebed
     attr_reader :pid
     attr_reader :params
     attr_reader :sizes
+    attr_reader :name
     attr_reader :mu
     attr_reader :as_mgr
     attr_reader :handle_table
@@ -202,7 +204,11 @@ module Lakebed
     attr_reader :alias_region
     attr_reader :heap_region
     attr_reader :stack_region
-        
+
+    def to_s
+      "Process<#{name}, pid 0x#{@pid.to_s(16)}>"
+    end
+    
     def add_nso(nso)
       addr = BASE_ADDR
       nso.segments.each do |seg|
@@ -236,7 +242,7 @@ module Lakebed
       end
 
       @pending_error = nil
-      puts "starting at #{@current_thread.pc.to_s(16)}"
+      puts "starting #{next_thread} at #{@current_thread.pc.to_s(16)}"
       @mu.emu_start(@current_thread.pc, 0, 0, 0)
       @current_thread.pc = @mu.reg_read(UnicornEngine::UC_ARM64_REG_PC)
       
