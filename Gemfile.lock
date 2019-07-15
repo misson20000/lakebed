@@ -2,7 +2,9 @@ PATH
   remote: .
   specs:
     lakebed (0.1.0)
+      hexdump (~> 0.2.3)
       lz4-ruby
+      rspec (~> 3.0)
       unicorn-engine
 
 GEM
@@ -37,11 +39,9 @@ PLATFORMS
 
 DEPENDENCIES
   bundler (~> 1.16)
-  hexdump (~> 0.2.3)
   lakebed!
-  pry (~> 0.12.2)
+  pry
   rake (~> 10.0)
-  rspec (~> 3.8)
 
 BUNDLED WITH
    1.17.2
