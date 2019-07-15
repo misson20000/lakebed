@@ -114,7 +114,7 @@ module Lakebed
     end
 
     def svc_sleep_thread
-      puts "sleep #{x0}"
+      Logger.log_for_thread(@current_thread, "sleep #{x0}")
     end
 
     def svc_get_thread_priority
@@ -136,8 +136,10 @@ module Lakebed
         @handle_table.get_strict(h, Waitable)
       end
 
-      puts "svcWaitSynchronization(\n  " +
-           (objects.map do |obj| obj.inspect end).join(",\n  ") + ")"
+      Logger.log_for_thread(
+        @current_thread,
+        "svcWaitSynchronization(\n  " +
+        (objects.map do |obj| obj.inspect end).join(",\n  ") + ")")
 
       thread = @current_thread
       suspension = LKThread::Suspension.new(thread, "svcWaitSynchronization")
@@ -148,7 +150,7 @@ module Lakebed
           [
             obj,
             obj.wait do
-              puts "svcWaitSync(#{thread}) got signal from #{obj}"
+              Logger.log_for_thread(thread, "got signal from #{obj}")
               suspension.release do
                 x0(0)
                 x1(i)
@@ -242,7 +244,7 @@ module Lakebed
     end
 
     def svc_output_debug_string
-      puts "DEBUG: " + @mu.mem_read(x0, x1)
+      Logger.log_for_thread(@current_thread, "DEBUG: " + @mu.mem_read(x0, x1))
     end
 
     # this one needs a good impl for version detection shenanigans...
@@ -422,7 +424,7 @@ module Lakebed
         end
       end
 
-      puts "WARNING: target getting unsupported info #{info_id}"
+      Logger.log_for_thread(@current_thread, "WARNING: target getting unsupported info #{info_id}")
       x0(0xf001) # let this one past strict error handling
     end
 
@@ -437,8 +439,11 @@ module Lakebed
       timeout = x4
 
       if x3 != 0 then
-        puts "replying:"
-        @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
+        Logger.log_for_thread(@current_thread, "replying:")
+        @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump do |i,h,p|
+          Logger.log_for_thread(@current_thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
+        end
+        
         reply_session = @handle_table.get_strict(x3, HIPC::Session::Server)
         reply_session.reply_message(self, HIPC::Message.parse(self, @current_thread.tls.addr, 0x100))
       end
@@ -453,13 +458,14 @@ module Lakebed
         x0(0xea01)
         return
       end
-      
+
+      thread = @current_thread
       suspension = LKThread::Suspension.new(@current_thread, "svcReplyAndReceive")
       procs = []
       earlywake = true
-      puts "svcReplyAndReceive:"
+      Logger.log_for_thread(thread, "svcReplyAndReceive:")
       objects.each_with_index.map do |obj, i|
-        puts "waiting on #{obj}"
+        Logger.log_for_thread(thread, "waiting on #{obj}")
         procs.push(
           [
             obj,
@@ -470,9 +476,11 @@ module Lakebed
                   if obj.closed? then
                     x0(0xf601)
                   else
-                    obj.receive_message(self, @current_thread.tls.addr, 0x100)
-                    puts "receiving:"
-                    @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
+                    obj.receive_message(self, thread.tls.addr, 0x100)
+                    Logger.log_for_thread(thread, "receiving:")
+                    @mu.mem_read(thread.tls.addr, 0x40).hexdump do |i,h,p|
+                      Logger.log_for_thread(thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
+                    end
                   end
                 end
                 x1(i)
@@ -559,9 +567,9 @@ module Lakebed
     def svc_call_secure_monitor
       smc_sub_id = x0
       smc_args = [x1, x2, x3, x4, x5, x6, x7]
-      puts "SMC[0x#{smc_sub_id.to_s(16)}](#{smc_args.inspect})"
+      Logger.log_for_thread(@current_thread, "SMC[0x#{smc_sub_id.to_s(16)}](#{smc_args.inspect})")
       @kernel.secure_monitor.call(self, smc_sub_id, smc_args).each_with_index do |v, i|
-        puts "  x#{i} => 0x#{v.to_s(16)}"
+        Logger.log_for_thread(@current_thread, "  x#{i} => 0x#{v.to_s(16)}")
         x(i, v)
       end
     end

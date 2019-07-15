@@ -65,6 +65,10 @@ module Lakebed
     def continue
       while @scheduler.has_next?
         next_thread = @scheduler.next_thread
+        if next_thread != @last_thread then
+          Logger.log_context_switch(@last_thread, next_thread)
+          @last_thread = next_thread
+        end
         next_thread.process.continue(next_thread)
       end
     end

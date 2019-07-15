@@ -1,3 +1,5 @@
+require_relative "logger.rb"
+
 module Lakebed
   class LKThread
     DEFAULT_PARAMS = {
@@ -39,7 +41,7 @@ module Lakebed
     end
 
     def to_s
-      "LKThread<#{process.name}(0x#{process.pid.to_s(16)}), thread 0x#{@tid.to_s(16)}>"
+      "#{process.name}::0x#{@tid.to_s(16)}"
     end
     
     class Suspension
@@ -52,6 +54,7 @@ module Lakebed
       attr_reader :description
 
       def release(&proc)
+        Logger.log_for_thread(@thread, "releasing suspension: #{@description}")
         @thread.resume(self, proc)
       end
     end
@@ -76,8 +79,8 @@ module Lakebed
       if !@current then
         raise "attempt to commit non-current thread"
       end
-      
-      puts "committing #{self}"
+
+      Logger.log_for_thread(self, "committing")
       @sp = @process.mu.reg_read(UnicornEngine::UC_ARM64_REG_SP)
       @current = false
     end
@@ -87,7 +90,7 @@ module Lakebed
         raise "attempt to restore current thread"
       end
       
-      puts "restoring #{self}"
+      Logger.log_for_thread(self, "restoring")
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_SP, @sp)
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_TPIDRRO_EL0, @tls.addr)
 
@@ -104,7 +107,7 @@ module Lakebed
         raise "attempt to double-suspend thread (current: #{@suspension.description}, attempted: #{desc})"
       end
 
-      puts "suspending #{self} (#{suspension.description})"
+      Logger.log_for_thread(self, "suspending on #{suspension.description}")
       @suspension = suspension
       @active = false
       @status = :suspended

@@ -4,6 +4,7 @@ PATH
     lakebed (0.1.0)
       hexdump (~> 0.2.3)
       lz4-ruby
+      paint
       rspec (~> 3.0)
       unicorn-engine
 
@@ -15,6 +16,7 @@ GEM
     hexdump (0.2.3)
     lz4-ruby (0.3.3)
     method_source (0.9.2)
+    paint (2.1.0)
     pry (0.12.2)
       coderay (~> 1.1.0)
       method_source (~> 0.9.0)
@@ -23,7 +25,7 @@ GEM
       rspec-core (~> 3.8.0)
       rspec-expectations (~> 3.8.0)
       rspec-mocks (~> 3.8.0)
-    rspec-core (3.8.1)
+    rspec-core (3.8.2)
       rspec-support (~> 3.8.0)
     rspec-expectations (3.8.4)
       diff-lcs (>= 1.2.0, < 2.0)

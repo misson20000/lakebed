@@ -29,7 +29,7 @@ module Lakebed
           Memory::ADDRSPACE_39 : # default to 39-bit addrspace on 2.0.0+
           Memory::ADDRSPACE_36 # default to 36-bit addrspace on 1.0.0
       @sizes = DEFAULT_SIZES.merge(params[:sizes] || {})
-      @name = params[:name] || "unnamed"
+      @name = params[:name] || "unnamed_0x#{@pid.to_s(16)}"
       
       # chosen by fair dice roll.
       # guaranteed to be random.
@@ -91,7 +91,7 @@ module Lakebed
           end
 
           if @current_thread.suspended? then
-            puts "#{@current_thread} has been suspended..."
+            Logger.log_for_thread(@current_thread, "suspended... stopping emulator")
             @mu.emu_stop
           end
         end)
@@ -242,7 +242,7 @@ module Lakebed
       end
 
       @pending_error = nil
-      puts "starting #{next_thread} at #{@current_thread.pc.to_s(16)}"
+      Logger.log_for_thread(next_thread, "starting at #{@current_thread.pc.to_s(16)}")
       @mu.emu_start(@current_thread.pc, 0, 0, 0)
       @current_thread.pc = @mu.reg_read(UnicornEngine::UC_ARM64_REG_PC)
       

@@ -16,7 +16,6 @@ module Lakebed
           @bt.push(lr)
         end
       rescue RuntimeError => e
-        puts "caught #{e}"
       end
       super(message)
     end

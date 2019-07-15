@@ -96,14 +96,13 @@ module Lakebed
 
       def close_sync(kernel)
         closed = false
-        puts "close sync..."
         @ksession.send_message(
           to_hipc(
             Lakebed::CMIF::Message.build_rq(0) do
               type(2)
             end)) do |reply|
           if reply then
-            raise "got reply to close message?"
+            raise "got reply to close message? #{reply}"
           end
           closed = true
         end

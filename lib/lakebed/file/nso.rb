@@ -59,8 +59,6 @@ module Lakebed
             if actual_hash != hashes[i] then
               raise "hash mismatch on #{["text", "rodata", "data"][i]} segment (#{actual_hash.unpack("H*").first} != #{hashes[i].unpack("H*").first})"
             end
-          else
-            puts "skipping hash check"
           end
           if decompressed.bytesize != segheader[:decompressed_size] then
             raise "decompressed size mismatch"
