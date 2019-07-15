@@ -1,5 +1,3 @@
-require "pry"
-
 module Lakebed
   module Files
     class Kip
