@@ -137,12 +137,13 @@ module Lakebed
         def close
           @session.close
         end
-        
+
         def send_message(msg, &block)
-          @session.pending_requests.push(
-            {
-              :msg => msg,
-              :block => block})
+          begin_transaction(Message::Transaction.new(msg, block))
+        end
+        
+        def begin_transaction(transaction)
+          @session.pending_requests.push(transaction)
           @session.server.signal
         end
       end
@@ -151,7 +152,7 @@ module Lakebed
         def initialize(session)
           super()
           @session = session
-          @current_reception = nil
+          @current_transaction = nil
         end
 
         attr_reader :session
@@ -161,8 +162,8 @@ module Lakebed
         end
 
         def close
-          if @current_reception then
-            @current_reception.reply(nil)
+          if @current_transaction then
+            @current_transaction.close
           end
           @session.close
         end
@@ -172,54 +173,16 @@ module Lakebed
         end
         
         def receive_message(process, buffer, addr)
-          if @current_reception != nil then
+          if @current_transaction != nil then
             raise "attempted to receive a message before replying"
           end
-          rq = @session.pending_requests.pop
-          @current_reception = rq[:msg].receive(process, buffer, addr, rq[:block])
+          @current_transaction = @session.pending_requests.pop
+          @current_transaction.receive(process, buffer, addr)
         end
 
-        def reply_message(process, buffer, size)
-          StringIO.open(process.mu.mem_read(buffer, size)) do |msg|
-            h1, h2 = msg.read(8).unpack("L<L<")
-            if h2[31] == 1 then
-              handle_descriptor = {}
-              h = msg.read(4).unpack("L<")[0]
-              if h[0] == 1 then
-                handle_descriptor[:pid] = msg.read(8).unpack("Q<")[0]
-                handle_descriptor[:pid] = process.pid
-                # TODO: ams pid spoofing
-              end
-              copy_handles = msg.read(4 * ((h >> 1) & 0xf)).unpack("L<*")
-              move_handles = msg.read(4 * ((h >> 5) & 0xf)).unpack("L<*")
-              handle_descriptor[:copy_handles] = copy_handles.map do |h|
-                process.handle_table.get_strict(h, nil, true, true)
-              end
-              handle_descriptor[:move_handles] = move_handles.map do |h|
-                process.handle_table.get_strict(h, nil, true, true)
-                # TODO: remove from source process handle table?
-              end
-            else
-              handle_descriptor = nil
-            end
-
-            raw_data_misalignment = msg.pos & 0xf
-            raw_data = msg.read(4 * (h2 & 0x3ff))
-            
-            @current_reception.reply(
-              Message.new(
-                :type => h1 & 0xffff,
-                :handle_descriptor => handle_descriptor,
-                :x_descriptors => [],
-                :a_descriptors => [],
-                :b_descriptors => [],
-                :w_descriptors => [],
-                :raw_data_misalignment => raw_data_misalignment,
-                :raw_data => raw_data,
-                :c_descriptors => []
-              ))
-            @current_reception = nil
-          end
+        def reply_message(process, message)
+          @current_transaction.reply(process, message)
+          @current_transaction = nil
         end
       end
     end
@@ -237,6 +200,47 @@ module Lakebed
         @c_descriptors = fields[:c_descriptors]
       end
 
+      def self.parse(process, buffer, size)
+        StringIO.open(process.mu.mem_read(buffer, size)) do |msg|
+          h1, h2 = msg.read(8).unpack("L<L<")
+          if h2[31] == 1 then
+            handle_descriptor = {}
+            h = msg.read(4).unpack("L<")[0]
+            if h[0] == 1 then
+              handle_descriptor[:pid] = msg.read(8).unpack("Q<")[0]
+              handle_descriptor[:pid] = process.pid
+              # TODO: ams pid spoofing
+            end
+            copy_handles = msg.read(4 * ((h >> 1) & 0xf)).unpack("L<*")
+            move_handles = msg.read(4 * ((h >> 5) & 0xf)).unpack("L<*")
+            handle_descriptor[:copy_handles] = copy_handles.map do |h|
+              process.handle_table.get_strict(h, nil, true, true)
+            end
+            handle_descriptor[:move_handles] = move_handles.map do |h|
+              process.handle_table.get_strict(h, nil, true, true)
+              # TODO: remove from source process handle table?
+            end
+          else
+            handle_descriptor = nil
+          end
+
+          raw_data_misalignment = msg.pos & 0xf
+          raw_data = msg.read(4 * (h2 & 0x3ff))
+          
+          Message.new(
+            :type => h1 & 0xffff,
+            :handle_descriptor => handle_descriptor,
+            :x_descriptors => [],
+            :a_descriptors => [],
+            :b_descriptors => [],
+            :w_descriptors => [],
+            :raw_data_misalignment => raw_data_misalignment,
+            :raw_data => raw_data,
+            :c_descriptors => []
+          )
+        end
+      end
+      
       attr_reader :type
       attr_reader :handle_descriptor
       attr_reader :x_descriptors
@@ -247,22 +251,104 @@ module Lakebed
       attr_reader :raw_data
       attr_reader :c_descriptors
       
-      # track buffer mappings...
-      class Reception
-        def initialize(msg, process, block)
-          @msg = msg
-          @process = process
-          @block = block
+      class Transaction
+        def initialize(rq, cb)
+          @received = false
+          @replied = false
+          @rq = rq
+          @recv_process = nil
+          @reply_process = nil
+          @cb = cb
+
+          # TODO: grab ReceiveList
         end
 
-        def reply(msg)
-          # TODO: unmap buffers
-          @block.call(msg)
+        class ProcessBufferDescriptor
+          def initialize(process, addr, size)
+            @process = process
+            @addr = addr
+            @size = size
+          end
+
+          attr_reader :size
+
+          def misalignment
+            @addr & 0xfff # TODO: how many low bits does kernel preserve?
+          end
+          
+          def read
+            @process.mu.mem_read(@addr, @size)
+          end
+
+          def write(data)
+            if data.bytesize != @size then
+              raise "attempt to writeback wrong amount of data"
+            end
+            @process.mu.mem_write(@addr, data)
+          end
+        end
+
+        class SyntheticBufferDescriptor
+          def initialize(data)
+            if data.is_a? String then
+              @data = data
+              @size = data.bytesize
+            elsif data.is_a? Integer then
+              @data = 0.chr * data
+              @size = data
+            else
+              raise "invalid argument"
+            end
+          end
+
+          attr_reader :data
+          attr_reader :size
+
+          def misalignment
+            0
+          end
+          
+          def read
+            @data
+          end
+
+          def write(data)
+            if data.bytesize != @size then
+              raise "attempt to writeback wrong amount of data"
+            end
+            @data = data
+          end
+        end
+        
+        def receive(recv_process, buffer, addr)
+          if @received then
+            raise "already received transaction"
+          end
+          @received = true
+          @recv_process = recv_process
+          @rq.serialize(recv_process, buffer, addr)
+          # TODO: read out buffers into server process
+        end
+        
+        def reply(reply_process, rs)
+          if @replied then
+            raise "alread replied to transaction"
+          end
+          @replied = true
+          @reply_process = reply_process
+          
+          # TODO: writeback to request buffer descriptors from reply_process
+          # TODO: unmap MapAlias buffers from recv_process
+          @cb.call(rs)
+        end
+
+        def close
+          @cb.call(nil)
         end
       end
       
       # serialize message back into process
-      def receive(proc, addr, size, block)
+      def serialize(proc, addr, size)
         h1 = @type & 0xffff
         # TODO: x descriptors
         # TODO: a descriptors
@@ -314,8 +400,6 @@ module Lakebed
         end
         
         proc.mu.mem_write(addr, message)
-
-        Reception.new(self, proc, block)
       end
     end
   end

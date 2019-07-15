@@ -25,6 +25,8 @@ module Lakebed
         svc_signal_process_wide_key
       when 0x1f
         svc_connect_to_named_port
+      when 0x21
+        svc_send_sync_request
       when 0x24
         svc_get_process_id
       when 0x25
@@ -212,6 +214,23 @@ module Lakebed
       x1(@handle_table.insert(port.client.connect))
     end
 
+    def svc_send_sync_request
+      session = @handle_table.get_strict(x0, HIPC::Session::Client)
+      message = HIPC::Message.parse(self, @current_thread.tls.addr, 0x100)
+
+      suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest")
+      session.send_message(message) do |rs|
+        suspension.release do
+          if rs then
+            rs.serialize(self, @current_thread.tls.addr, 0x100)
+            x0(0)
+          else
+            x0(0xf601)
+          end
+        end
+      end
+    end
+    
     def svc_get_process_id
       x1(@handle_table.get_strict(x1, Process).pid)
       x0(0)
@@ -421,7 +440,7 @@ module Lakebed
         puts "replying:"
         @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump
         reply_session = @handle_table.get_strict(x3, HIPC::Session::Server)
-        reply_session.reply_message(self, @current_thread.tls.addr, 0x100)
+        reply_session.reply_message(self, HIPC::Message.parse(self, @current_thread.tls.addr, 0x100))
       end
       
       objects = handles.map do |h|
