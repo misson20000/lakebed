@@ -61,7 +61,7 @@ module Lakebed
     
     attr_reader :process
     attr_reader :tid
-    attr_reader :priority
+    attr_accessor :priority
     attr_accessor :pc
     attr_reader :tls
     

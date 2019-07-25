@@ -15,6 +15,8 @@ module Lakebed
         svc_sleep_thread
       when 0xc
         svc_get_thread_priority
+      when 0xd
+        svc_set_thread_priority
       when 0x16
         svc_close_handle
       when 0x18
@@ -121,6 +123,12 @@ module Lakebed
       thread = @handle_table.get_strict(x1, LKThread)
       x0(0)
       x1(thread.priority)
+    end
+
+    def svc_set_thread_priority
+      thread = @handle_table.get_strict(x0, LKThread)
+      thread.priority = x1
+      x0(0)
     end
 
     def svc_close_handle
