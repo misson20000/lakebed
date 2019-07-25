@@ -32,7 +32,7 @@ module Lakebed
       @secure_monitor = HLE::SecureMonitor::Exosphere.new(environment)
       # on <4.0.0, KIPs start at PID 0 I think?
       # on 5.0.0+, KIPs start at PID 1
-      @next_pid = 0x50
+      @next_pid = 1
       @next_tid = 0x250
     end
 
@@ -60,6 +60,10 @@ module Lakebed
       tid = @next_tid
       @next_tid+= 1
       return tid
+    end
+
+    def kips_loaded
+      @next_pid = 0x50
     end
     
     def continue
