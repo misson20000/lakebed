@@ -19,10 +19,11 @@ module Lakebed
     
     def signal
       if is_signaled? then
-        @waiting_procs.each do |p|
+        procs = @waiting_procs
+        @waiting_procs = []
+        procs.each do |p|
           p.call
         end
-        @waiting_procs = []
       end
     end
   end
