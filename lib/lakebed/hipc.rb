@@ -184,6 +184,14 @@ module Lakebed
           @current_transaction.reply(process, message)
           @current_transaction = nil
         end
+
+        def receive_message_for_hle
+          if @current_transaction != nil then
+            raise "attempted to receive a message before replying"
+          end
+          @current_transaction = @session.pending_requests.pop
+          @current_transaction.rq
+        end
       end
     end
 
@@ -263,6 +271,8 @@ module Lakebed
           # TODO: grab ReceiveList
         end
 
+        attr_reader :rq
+        
         class ProcessBufferDescriptor
           def initialize(process, addr, size)
             @process = process
@@ -331,6 +341,8 @@ module Lakebed
         end
         
         def reply(reply_process, rs)
+          # NOTE: receive_message_for_hle does not set recv_process
+          # because HLE modules don't have processes.
           if @replied then
             raise "alread replied to transaction"
           end
@@ -355,7 +367,7 @@ module Lakebed
         # TODO: b descriptors
         # TODO: w descriptors
         if @raw_data.size & 0x3 != 0 then
-          raise "invalid raw data size"
+          raise "invalid raw data size: #{@raw_data.size}"
         end
         h2 = (@raw_data.size / 4) & 0x3ff
         # TODO: c descriptors

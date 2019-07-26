@@ -34,6 +34,7 @@ module Lakebed
       # on 5.0.0+, KIPs start at PID 1
       @next_pid = 1
       @next_tid = 0x250
+      @hle_modules = []
     end
 
     attr_reader :environment
@@ -42,6 +43,10 @@ module Lakebed
     attr_reader :named_ports
     attr_accessor :secure_monitor
 
+    def load_hle_module(mod)
+      @hle_modules.push(mod.new(self))
+    end
+    
     def priveleged_lower_bound
       1
     end

@@ -8,61 +8,12 @@ module Lakebed
         @ksession = ksession
       end
 
-      def to_hipc(msg)
-        # Thankfully we don't care about bitfuckery here. Just predict
-        # how long the HIPC descriptors are and use it to align the
-        # data and pass off an abstract HIPCMessage to serialize into
-        # the destination server's buffer.
-
-        size = 2 # headers
-
-        if msg.has_handle_descriptor?
-          size+= 1 # handle descriptor
-        end
-
-        if msg.pid != nil
-          size+= 2
-        end
-
-        size+= msg.copy_handles.size
-        size+= msg.move_handles.size
-
-        # TODO: buffer descriptors
-
-        raw_data_misalignment = (size * 4) & 0xf
-        pad_before = ((size + 3) & ~3) - size
-        raw_data = 0.chr * 4 * pad_before
-
-        raw_data+= msg.magic + [0, msg.cmdid, 0].pack("L<L<L<")
-        raw_data+= msg.data
-        
-        pad_after = 4 - pad_before
-        raw_data+= 0.chr * 4 * pad_after
-        # TODO: type A lengths
-
-        return HIPC::Message.new(
-                 :type => msg.type,
-                 :handle_descriptor =>
-                 msg.has_handle_descriptor? ?
-                   {:pid => msg.pid,
-                    :copy_handles => msg.copy_handles,
-                    :move_handles => msg.move_handles} :
-                   nil,
-                 :x_descriptors => [],
-                 :a_descriptors => [],
-                 :b_descriptors => [],
-                 :w_descriptors => [],
-                 :raw_data_misalignment => raw_data_misalignment,
-                 :raw_data => raw_data,
-                 :c_descriptors => [])
-      end
-
       def from_hipc(msg)
         Unpacker.new(msg)
       end
 
       def send_message(msg)
-        @ksession.send_message(to_hipc(msg)) do |reply|
+        @ksession.send_message(msg.to_hipc) do |reply|
           yield reply ? from_hipc(reply) : nil
         end
       end
@@ -70,7 +21,7 @@ module Lakebed
       def send_message_sync(kernel, msg, &block)
         cmif_reply = nil
         session_closed = false
-        @ksession.send_message(to_hipc(msg)) do |reply|
+        @ksession.send_message(msg.to_hipc) do |reply|
           if !reply then
             session_closed = true
             next
@@ -97,10 +48,9 @@ module Lakebed
       def close_sync(kernel)
         closed = false
         @ksession.send_message(
-          to_hipc(
-            Lakebed::CMIF::Message.build_rq(0) do
-              type(2)
-            end)) do |reply|
+          Lakebed::CMIF::Message.build_rq(0) do
+            type(2)
+          end.to_hipc) do |reply|
           if reply then
             raise "got reply to close message? #{reply}"
           end
@@ -161,10 +111,8 @@ module Lakebed
     end
     
     class Message
-      def initialize(type, magic, cmdid, pid, copy_handles, move_handles, data, buffers)
+      def initialize(type, pid, copy_handles, move_handles, data, buffers)
         @type = type
-        @magic = magic
-        @cmdid = cmdid
         @pid = pid
         @copy_handles = copy_handles
         @move_handles = move_handles
@@ -177,13 +125,59 @@ module Lakebed
       end
 
       attr_reader :type
-      attr_reader :magic
-      attr_reader :cmdid
+      attr_reader :rd_header
       attr_reader :pid
       attr_reader :copy_handles
       attr_reader :move_handles
       attr_reader :data
       attr_reader :buffers
+
+      def to_hipc
+        # Thankfully we don't care about bitfuckery here. Just predict
+        # how long the HIPC descriptors are and use it to align the
+        # data and pass off an abstract HIPCMessage to serialize into
+        # the destination server's buffer.
+
+        size = 2 # headers
+
+        if has_handle_descriptor?
+          size+= 1 # handle descriptor
+        end
+
+        if @pid != nil
+          size+= 2
+        end
+
+        size+= @copy_handles.size
+        size+= @move_handles.size
+
+        # TODO: buffer descriptors
+
+        raw_data_misalignment = (size * 4) & 0xf
+        pad_before = ((size + 3) & ~3) - size
+        raw_data = 0.chr * 4 * pad_before
+        raw_data+= @data
+        
+        pad_after = 4 - pad_before
+        raw_data+= 0.chr * 4 * pad_after
+        # TODO: type A lengths
+
+        return HIPC::Message.new(
+                 :type => @type,
+                 :handle_descriptor =>
+                 has_handle_descriptor? ?
+                   {:pid => @pid,
+                    :copy_handles => @copy_handles,
+                    :move_handles => @move_handles} :
+                   nil,
+                 :x_descriptors => [],
+                 :a_descriptors => [],
+                 :b_descriptors => [],
+                 :w_descriptors => [],
+                 :raw_data_misalignment => raw_data_misalignment,
+                 :raw_data => raw_data,
+                 :c_descriptors => [])
+      end
       
       class MessageBuilder
         def initialize(magic, type, cmdid)
@@ -199,7 +193,7 @@ module Lakebed
 
         def to_message
           align(4)
-          Message.new(@type, @magic, @cmdid, @pid, @copy_handles, @move_handles, @data, @buffers)
+          Message.new(@type, @pid, @copy_handles, @move_handles, [@magic, @cmdid].pack("a4x4L<x4") + @data, @buffers)
         end
 
         def type(type)
