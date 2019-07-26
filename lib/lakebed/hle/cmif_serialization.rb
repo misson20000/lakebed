@@ -77,6 +77,12 @@ module Lakebed
             end
           end
         end
+
+        class Object < Out
+          def pack(ctx, value)
+            ctx.append_out_object(value)
+          end
+        end
       end
     end
   end

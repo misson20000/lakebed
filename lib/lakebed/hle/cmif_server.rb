@@ -30,6 +30,12 @@ module Lakebed
             process_deferrals
           end
         end
+
+        def create_session(object)
+          session = HIPC::Session.new
+          add_session(Session.new(session.server, object))
+          return session.client
+        end
         
         def add_session(session)
           session.ko.wait do
@@ -45,29 +51,29 @@ module Lakebed
               if session.object.is_domain? then
                 # TODO: token
                 command, in_object_count, data_payload_length, object_id, token = raw_data.unpack("CCS<L<x4L<")
-                de_ctx = DeserializationContext.new(rq, raw_data.byteslice(16, raw_data.bytesize - 16), session.object)
                 case command
                 when 1 # Send
                   object = session.object.get_object(object_id)
+                  de_ctx = DeserializationContext.new(self, rq, raw_data.byteslice(16, raw_data.bytesize - 16), session.object)
                   if object.dispatch(session, de_ctx) then
                     @deferrals.push({:object => object, :session => session, :de_ctx => de_ctx})
                     next
                   end
                 when 2 # Close
                   session.object.close_object(object_id)
-                  session.reply(de_ctx.prepare_reply.to_cmif)
+                  session.reply(ReserializationContext.new(self, 0, session.object).to_cmif)
                 else
                   raise "unknown domain command: #{command}"
                 end
               else
-                de_ctx = DeserializationContext.new(rq, raw_data, nil)
+                de_ctx = DeserializationContext.new(self, rq, raw_data, nil)
                 if session.object.dispatch(session, de_ctx) then
                   @deferrals.push({:object => session.object, :session => session, :de_ctx => de_ctx})
                   next
                 end
               end
             when 5 # Control
-              de_ctx = DeserializationContext.new(rq, raw_data, nil)
+              de_ctx = DeserializationContext.new(self, rq, raw_data, nil)
               if @hipc_manager.dispatch(session, de_ctx) then
                 @deferrals.push({:object => @hipc_manager, :session => session, :de_ctx => de_ctx})
                 next
@@ -105,13 +111,14 @@ module Lakebed
       end
 
       class DeserializationContext
-        def initialize(rq, raw_data, domain)
+        def initialize(server, rq, raw_data, domain)
+          @server = server
           @rq = rq
           @raw_data = raw_data
           @domain = domain
 
           if raw_data.byteslice(0, 4) != "SFCI" then
-            raise "invalid request magic"
+            raise "invalid request magic: #{raw_data.byteslice(0, 4)}"
           end
 
           reset!
@@ -135,12 +142,13 @@ module Lakebed
         end
         
         def prepare_reply(code=0)
-          ReserializationContext.new(code, @domain)
+          ReserializationContext.new(@server, code, @domain)
         end
       end
 
       class ReserializationContext
-        def initialize(code, domain)
+        def initialize(server, code, domain)
+          @server = server
           @code = code
           @domain = domain
           @raw_data = String.new
@@ -163,14 +171,19 @@ module Lakebed
         
         def raw_data
           rd = String.new
-          if @is_domain then
+          if @domain then
             rd+= [@out_objects.size].pack("L<x12")
           end
           rd+= ["SFCO", @code].pack("a4x4L<x4")
           rd+= @raw_data
-          rd+= @out_objects.map do |o|
-            @domain.add_object(o)
-          end.pack("L<*")
+          if @domain then
+            rd+= @out_objects.map do |o|
+              id = @domain.add_object(o)
+              puts "sending out object #{o} -> #{id}"
+              id
+            end.pack("L<*")
+          end
+          rd
         end
 
         def append_raw_data(d, alignment)
@@ -184,6 +197,14 @@ module Lakebed
 
         def append_copy_handle(h)
           @copy_handles.push(h)
+        end
+
+        def append_out_object(o)
+          if @domain then
+            @out_objects.push(o)
+          else
+            @move_handles.push(@server.create_session(o))
+          end
         end
       end
 
@@ -282,6 +303,11 @@ module Lakebed
         def get_object(id)
           @objects[id]
         end
+
+        def close_object(id)
+          @objects[id].close
+          @objects.delete(id)
+        end
       end
       
       class HipcManager < Object
@@ -304,18 +330,14 @@ module Lakebed
           In::RawData.new(4, "L<"),
           Out::Handle.new(:move)) do |object_id|
           puts "copying from domain"
-          new_session = HIPC::Session.new
-          @server.add_session(new_session.server, session.object.get_object(object_id))
-          next new_session.client
+          next @server.create_session(session.object.get_object(object_id))
         end
 
         command(
           2, # CloneCurrentObject
           Out::Handle.new(:move)) do
           puts "cloning current object"
-          new_session = HIPC::Session.new
-          @server.add_session(new_session.server, session.object)
-          next new_session.client
+          next @server.create_session(session.object)
         end
 
         command(
