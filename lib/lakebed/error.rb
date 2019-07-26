@@ -8,7 +8,7 @@ module Lakebed
       @message = message
       @cause = cause
       @pc = proc.pc
-      @bt = [@pc]
+      @bt = [@pc, @proc.mu.reg_read(UnicornEngine::UC_ARM64_REG_X30)]
       begin
         fp = @proc.mu.reg_read(UnicornEngine::UC_ARM64_REG_X29)
         while fp != 0 do
@@ -16,6 +16,9 @@ module Lakebed
           @bt.push(lr)
         end
       rescue RuntimeError => e
+      end
+      @regs = 31.times.map do |r|
+        @proc.mu.reg_read(UnicornEngine.const_get("UC_ARM64_REG_X" + r.to_s))
       end
       super(message)
     end
@@ -25,6 +28,8 @@ module Lakebed
     def message
       "#{@message} - BACKTRACE:\n" + @bt.map do |e|
         "  - " + @proc.as_mgr.inspect_addr(e)
+      end.join("\n") + "\nREGISTERS:\n" + @regs.each_with_index.map do |r, i|
+        "  x#{i.to_s.ljust(2)}: 0x#{r.to_s(16).rjust(16, "0")}"
       end.join("\n")
     end
   end
