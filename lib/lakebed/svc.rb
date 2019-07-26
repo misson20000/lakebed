@@ -7,10 +7,14 @@ module Lakebed
   class Process
     def svc(id)
       case id
+      when 0x4
+        svc_map_memory
       when 0x5
         svc_unmap_memory
       when 0x6
         svc_query_memory
+      when 0x8
+        svc_create_thread
       when 0xb
         svc_sleep_thread
       when 0xc
@@ -56,6 +60,22 @@ module Lakebed
       end
     end
 
+    def svc_map_memory
+      dst_addr = x0
+      src_addr = x1
+      size = x2
+
+      # TODO: check that we're in the stack region
+      alloc = @as_mgr.force(
+        dst_addr, size,
+        {:label => "remapped",
+         :memory_type => MemoryType::Stack,
+         :permission => Perm::RW})
+      alloc.map(@mu)
+
+      x0(0)
+    end
+    
     def svc_unmap_memory
       dst_addr = x0
       src_addr = x1
@@ -115,6 +135,17 @@ module Lakebed
       x1(0)
     end
 
+    def svc_create_thread
+      thread = LKThread.new(self, {:entry => x1, :sp => x3})
+      thread.gprs[0] = x2 # context
+      thread.priority = x4
+
+      # x5: processor id is ignored
+
+      x0(0)
+      x1(@handle_table.insert(thread))
+    end
+    
     def svc_sleep_thread
       Logger.log_for_thread(@current_thread, "sleep #{x0}")
     end

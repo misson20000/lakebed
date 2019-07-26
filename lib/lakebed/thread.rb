@@ -4,11 +4,20 @@ module Lakebed
   class LKThread
     DEFAULT_PARAMS = {
       :gprs => [0] * 31,
+      :fprs => [[0, 0]] * 32,
       :priority => 50,
       :processor_id => 3,
       :owns_tls => false,
     }
-    
+
+    GPR_CONSTANTS = 31.times.map do |r|
+      UnicornEngine.const_get("UC_ARM64_REG_X" + r.to_s)
+    end
+
+    FPR_CONSTANTS = 32.times.map do |r|
+      UnicornEngine.const_get("UC_ARM64_REG_V" + r.to_s)
+    end
+
     def initialize(proc, params)
       @process = proc
       @tid = @process.kernel.allocate_tid
@@ -28,8 +37,10 @@ module Lakebed
       params = DEFAULT_PARAMS.merge(params)
       
       @pc = params[:entry]
-      @gprs = params[:gprs]
       @sp = params[:sp]
+      @gprs = params[:gprs]
+      @fprs = params[:fprs]
+      @nzcv = 0
       @priority = params[:priority]
       @processor_id = params[:processor_id]
       @tls = params[:tls]
@@ -63,6 +74,10 @@ module Lakebed
     attr_reader :tid
     attr_accessor :priority
     attr_accessor :pc
+    attr_accessor :gprs
+    attr_accessor :fprs
+    attr_accessor :nzcv
+    attr_accessor :sp
     attr_reader :tls
     
     def start
@@ -82,6 +97,13 @@ module Lakebed
 
       Logger.log_for_thread(self, "committing")
       @sp = @process.mu.reg_read(UnicornEngine::UC_ARM64_REG_SP)
+      @gprs = GPR_CONSTANTS.map do |c|
+        @process.mu.reg_read(c)
+      end
+      @fprs = FPR_CONSTANTS.map do |c|
+        @process.mu.reg_read(c)
+      end
+      @nzcv = @process.mu.reg_read(UnicornEngine::UC_ARM64_REG_NZCV)
       @current = false
     end
 
@@ -93,7 +115,14 @@ module Lakebed
       Logger.log_for_thread(self, "restoring")
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_SP, @sp)
       @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_TPIDRRO_EL0, @tls.addr)
-
+      @gprs.each_with_index do |r, i|
+        @process.mu.reg_write(GPR_CONSTANTS[i], r)
+      end
+      @fprs.each_with_index do |r, i|
+        @process.mu.reg_write(FPR_CONSTANTS[i], r)
+      end
+      @process.mu.reg_write(UnicornEngine::UC_ARM64_REG_NZCV, @nzcv)
+      
       @current = true
       
       if @restore_proc != nil
