@@ -593,6 +593,8 @@ module Lakebed
 
       port = HIPC::Port.new(name, x2)
       @kernel.named_ports[name] = port
+      @kernel.notify_port(name)
+      
       x0(0)
       x1(@handle_table.insert(port.server))
     end

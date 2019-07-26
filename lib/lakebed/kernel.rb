@@ -35,6 +35,8 @@ module Lakebed
       @next_pid = 1
       @next_tid = 0x250
       @hle_modules = []
+
+      @port_notifications = []
     end
 
     attr_reader :environment
@@ -45,6 +47,27 @@ module Lakebed
 
     def load_hle_module(mod)
       @hle_modules.push(mod.new(self))
+    end
+
+    def wait_for_port(port, &block)
+      if !@named_ports[port] then
+        @port_notifications.push({:port => port, :proc => block})
+      else
+        yield(@named_ports[port])
+      end
+    end
+
+    def notify_port(port)
+      notifs = @port_notifications
+      @port_notifications = []
+      @port_notifications+= notifs.filter do |n|
+        if n[:port] == port then
+          n[:block].call(@named_ports[port])
+          false
+        else
+          true
+        end
+      end
     end
     
     def priveleged_lower_bound
