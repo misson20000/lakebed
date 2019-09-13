@@ -1,4 +1,5 @@
 require_relative "hle/secure_monitor/exosphere.rb"
+require_relative "resource_limit.rb"
 
 module Lakebed
   class Scheduler
@@ -22,6 +23,21 @@ module Lakebed
       end
     end
   end
+
+  class PoolPartition
+    def initialize(total)
+      @current = 0
+      @total = total
+    end
+
+    def total_memory_size
+      @total
+    end
+
+    def current_memory_size
+      @current
+    end
+  end
   
   class Kernel
     def initialize(environment)
@@ -30,6 +46,14 @@ module Lakebed
       @strict_svcs = false
       @named_ports = Hash.new
       @secure_monitor = HLE::SecureMonitor::Exosphere.new(environment)
+      @pool_partitions = [
+        # TODO: pick some better numbers here
+        PoolPartition.new(0xCD500000), # Application
+        PoolPartition.new(0x1C600000), # Applet
+        PoolPartition.new(0x1C600000), # System (got lazy after hunting down applet numbers)
+        PoolPartition.new(0x1C600000) # SystemUnsafe
+      ]
+      @system_resource_limit = ResourceLimit.new
       # on <4.0.0, KIPs start at PID 0 I think?
       # on 5.0.0+, KIPs start at PID 1
       @next_pid = 1
@@ -44,6 +68,8 @@ module Lakebed
     attr_accessor :strict_svcs
     attr_reader :named_ports
     attr_accessor :secure_monitor
+    attr_reader :pool_partitions
+    attr_reader :system_resource_limit
 
     def load_hle_module(mod)
       @hle_modules[mod] = mod.new(self)

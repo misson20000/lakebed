@@ -93,6 +93,13 @@ module Lakebed
     CurrentMemorySize = 1
     PrivilegedProcessId = 2
   end
+
+  module PoolPartitionId
+    Application = 0
+    Applet = 1
+    System = 2
+    SystemUnsafe = 3
+  end
   
   class TargetVersion
     def initialize(target, numeric)

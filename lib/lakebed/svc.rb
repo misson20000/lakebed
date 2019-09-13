@@ -41,6 +41,10 @@ module Lakebed
         svc_output_debug_string
       when 0x29
         svc_get_info
+      when 0x30
+        svc_get_resource_limit_limit_value
+      when 0x31
+        svc_get_resource_limit_current_value
       when 0x41
         svc_accept_session
       when 0x43
@@ -55,6 +59,10 @@ module Lakebed
         svc_manage_named_port
       when 0x72
         svc_connect_to_port
+      when 0x7d
+        svc_create_resource_limit
+      when 0x7e
+        svc_set_resource_limit_limit_value
       when 0x7f
         svc_call_secure_monitor
       else
@@ -374,8 +382,10 @@ module Lakebed
         end
         x1(0)
         return
-      when InfoId::ResourceLimitHandle,
-           InfoId::IdleTickCount
+      when InfoId::ResourceLimitHandle
+        x1(@handle_table.insert(@resource_limit))
+        return
+      when InfoId::IdleTickCount
         raise TodoError.new("unimplemented svcGetInfo(#{info_id})")
       when InfoId::RandomEntropy
         if handle != 0 then
@@ -467,6 +477,18 @@ module Lakebed
 
       Logger.log_for_thread(@current_thread, "WARNING: target getting unsupported info #{info_id}")
       x0(0xf001) # let this one past strict error handling
+    end
+
+    def svc_get_resource_limit_limit_value
+      rl = @handle_table.get_strict(x1, ResourceLimit)
+      x1(rl.get_limit_value(x2))
+      x0(0)
+    end
+
+    def svc_get_resource_limit_current_value
+      rl = @handle_table.get_strict(x1, ResourceLimit)
+      x1(rl.get_current_value(x2))
+      x0(0)
     end
 
     def svc_accept_session
@@ -561,6 +583,10 @@ module Lakebed
       x0(0)
 
       case info_id
+      when SystemInfoId::TotalMemorySize
+        x1(@kernel.pool_partitions[info_sub_id].total_memory_size)
+      when SystemInfoId::CurrentMemorySize
+        x1(@kernel.pool_partitions[info_sub_id].current_memory_size)
       when SystemInfoId::PrivilegedProcessId
         case info_sub_id
         when 0
@@ -612,6 +638,17 @@ module Lakebed
       port = @handle_table.get_strict(x1, HIPC::Port::Client)
       x0(0)
       x1(@handle_table.insert(port.connect))
+    end
+
+    def svc_create_resource_limit
+      x0(0)
+      x1(@handle_table.insert(ResourceLimit.new))
+    end
+
+    def svc_set_resource_limit_limit_value
+      rl = @handle_table.get_strict(x0, ResourceLimit)
+      rl.set_limit_value(x1, x2)
+      x0(0)
     end
     
     def svc_call_secure_monitor
