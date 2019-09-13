@@ -27,4 +27,49 @@ module Lakebed
       end
     end
   end
+
+  class Event
+    def initialize
+      @server = Server.new(self)
+      @client = Client.new(self)
+      @is_signaled = false
+    end
+
+    def signal
+      @is_signaled = true
+      @client.signal
+    end
+
+    def reset
+      @is_signaled = false
+    end
+
+    attr_reader :client
+    attr_reader :server
+    attr_reader :is_signaled
+    
+    class Server
+      def initialize(event)
+        @event = event
+      end
+
+      def signal
+        @event.signal
+      end
+    end
+    
+    class Client < Waitable
+      def initialize(event)
+        @event = event
+      end
+
+      def reset
+        @event.reset
+      end
+      
+      def is_signaled?
+        @event.is_signaled
+      end
+    end
+  end
 end

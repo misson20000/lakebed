@@ -45,6 +45,8 @@ module Lakebed
         svc_accept_session
       when 0x43
         svc_reply_and_receive
+      when 0x45
+        svc_create_event
       when 0x6f
         svc_get_system_info
       when 0x70
@@ -536,6 +538,13 @@ module Lakebed
       earlywake = false
     end
 
+    def svc_create_event
+      event = Event.new
+      x0(0)
+      x1(@handle_table.insert(event.server))
+      x2(@handle_table.insert(event.client))
+    end
+    
     def svc_get_system_info
       info_id = x1
       handle = x2
