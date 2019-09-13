@@ -34,7 +34,7 @@ module Lakebed
       # on 5.0.0+, KIPs start at PID 1
       @next_pid = 1
       @next_tid = 0x250
-      @hle_modules = []
+      @hle_modules = {}
 
       @port_notifications = []
     end
@@ -46,7 +46,11 @@ module Lakebed
     attr_accessor :secure_monitor
 
     def load_hle_module(mod)
-      @hle_modules.push(mod.new(self))
+      @hle_modules[mod] = mod.new(self)
+    end
+
+    def get_hle_module(mod)
+      @hle_modules[mod]
     end
 
     def wait_for_port(port, &block)

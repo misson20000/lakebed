@@ -29,6 +29,12 @@ module Lakebed
 
       attr_reader :kernel
       attr_reader :services
+
+      def register_for_hle(name, max=0x40)
+        port = HIPC::Port.new(nil, max)
+        @services[[name].pack("a8")] = port.client
+        port.server
+      end
       
       class IUserInterface < CMIF::Object
         def initialize(sm)

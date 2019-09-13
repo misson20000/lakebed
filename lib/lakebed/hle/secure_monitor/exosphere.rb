@@ -12,8 +12,12 @@ module Lakebed
 
         def call(proc, sub_id, args)
           case sub_id
-          when 0xC3000002 # smc_get_config_user
+          when SmcSubId::GetConfig # smc_get_config_user
             case args[0]
+            when ConfigItem::DisableProgramVerification
+              config = 0
+            when ConfigItem::MemoryArrange
+              config = 0
             when ConfigItem::ExosphereVersion
               config =
                 ((@environment.ams_version[0] & 0xff) << 32) |

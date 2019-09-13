@@ -143,7 +143,33 @@ module Lakebed
     PK1_800 = 0x20000212
   end
 
+  module SmcSubId
+    GetConfig = 0xC3000002
+  end
+  
   module ConfigItem # for smcGetConfigUser
+    DisableProgramVerification = 1
+    DramId = 2
+    SecurityEngineIrq = 3
+    Version = 4
+    HardwareType = 5
+    IsRetail = 6
+    IsRecoveryBoot = 7
+    DeviceId = 8
+    BootReason = 9
+    MemoryArrange = 10
+    IsDebugMode = 11
+    KernelConfiguration = 12
+    HizMode = 13
+    IsQuestUnit = 14
+    NewHardwareType5x = 15
+    NewKeyGeneration5x = 16
+    Package2Hash5x = 17
+    
     ExosphereVersion = 65000
+    NeedsReboot = 65001
+    NeedsShutdown = 65002
+    ExosphereVerhash = 65003
+    HasRcmBugPatch = 65004
   end
 end
