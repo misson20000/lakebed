@@ -10,14 +10,16 @@ module Lakebed
           @deferrals = []
         end
 
+        attr_reader :hipc_manager
+        
         def process_deferrals
           deferrals = @deferrals
           @deferrals = []
           @deferrals+= deferrals.filter do |d|
-            if d[:object].dispatch(d[:session], d[:de_ctx]) then
+            if d.handle then
               true
             else
-              add_session(d[:session])
+              add_session(d.session)
               false
             end
           end
@@ -40,61 +42,146 @@ module Lakebed
         def add_session(session)
           session.ko.wait do
             rq = session.ko.receive_message_for_hle
-            raw_data_offset = (0x10 - rq.raw_data_misalignment) & 0xf
-            raw_data = rq.raw_data.byteslice(raw_data_offset, rq.raw_data.bytesize - raw_data_offset)
-            case rq.type
-            when 2 # Close
-              session.close
-              next
-            when 4 # Request
-              # TODO: NewRequest
-              if session.object.is_domain? then
-                # TODO: token
-                command, in_object_count, data_payload_length, object_id, token = raw_data.unpack("CCS<L<x4L<")
-                case command
-                when 1 # Send
-                  object = session.object.get_object(object_id)
-                  de_ctx = DeserializationContext.new(self, rq, raw_data.byteslice(16, raw_data.bytesize - 16), session.object)
-                  if object.dispatch(session, de_ctx) then
-                    @deferrals.push({:object => object, :session => session, :de_ctx => de_ctx})
-                    next
-                  end
-                when 2 # Close
-                  session.object.close_object(object_id)
-                  session.reply(ReserializationContext.new(self, 0, session.object).to_cmif)
-                else
-                  raise "unknown domain command: #{command}"
-                end
-              else
-                de_ctx = DeserializationContext.new(self, rq, raw_data, nil)
-                if session.object.dispatch(session, de_ctx) then
-                  @deferrals.push({:object => session.object, :session => session, :de_ctx => de_ctx})
-                  next
-                end
-              end
-            when 5 # Control
-              de_ctx = DeserializationContext.new(self, rq, raw_data, nil)
-              if @hipc_manager.dispatch(session, de_ctx) then
-                @deferrals.push({:object => @hipc_manager, :session => session, :de_ctx => de_ctx})
-                next
-              end
-            else
-              raise "unknown request type: #{rq.type}"
-            end
+            session.dispatch(self, rq)
+            
             add_session(session)
             process_deferrals
           end
         end
       end
 
+      class Request
+        def initialize(server, session)
+          @server = server
+          @session = session
+        end
+
+        def describe
+          "generic request (override me!)"
+        end
+
+        def handle
+          raise "abstract"
+          nil
+        end
+        
+        attr_reader :server
+        attr_reader :session
+      end
+      
+      class SessionCloseRequest < Request
+        def describe
+          "close session (#{@session.object.class})"
+        end
+
+        def handle
+          @session.close
+          nil
+        end
+      end
+      
+      class ObjectCloseRequest < Request
+        def initialize(server, session, object, object_id)
+          super(server, session)
+          @object = object
+          @object_id = object_id
+        end
+
+        def describe
+          "close object #{@object_id} (#{@object.get_object(@object_id).class})"
+        end
+
+        def handle
+          @object.close_object(@object_id)
+          @session.reply(ReserializationContext.new(@server, 0, @object).to_cmif)
+          nil
+        end
+      end
+
+      class CommandRequest < Request
+        def initialize(server, session, object, de_ctx, command)
+          super(server, session)
+          @object = object
+          @de_ctx = de_ctx
+          @command = command
+        end
+
+        def describe
+          if @command then
+            return "#{@object.class}##{@command.label}{#{@de_ctx.command_id}}(#{@command.describe_args(@de_ctx)})"
+          else
+            return "unknown command request to #{@object.class}##{@de_ctx.command_id}"
+          end
+        end
+
+        def handle
+          if !@command then
+            @session.close
+            return nil
+          else
+            begin
+              @session.reply(@command.invoke(@object, @de_ctx))
+            rescue DeferralError => e
+              return self
+              #TODO: rescue DeserializationError => e
+              #TODO:  session.close
+            end
+          end
+          return nil
+        end
+      end
+      
       class Session
         def initialize(session, object)
           @ko = session
           @object = object
+
+          @ko.message_describer = self
         end
 
         def pointer_buffer_size
           512
+        end
+        
+        def parse(server, rq)
+          raw_data_offset = (0x10 - rq.raw_data_misalignment) & 0xf
+          raw_data = rq.raw_data.byteslice(raw_data_offset, rq.raw_data.bytesize - raw_data_offset)
+          case rq.type
+          when 2 # Close
+            return CloseRequest.new(server, self)
+          when 4, 6 # Request, NewRequest
+            # TODO: NewRequest
+            if @object.is_domain? then
+              # TODO: token
+              command, in_object_count, data_payload_length, object_id, token = raw_data.unpack("CCS<L<x4L<")
+              case command
+              when 1 # Send
+                object = @object.get_object(object_id)
+                de_ctx = DeserializationContext.new(server, rq, raw_data.byteslice(16, raw_data.bytesize - 16), @object)
+                return object.parse(server, self, de_ctx)
+              when 2 # Close
+                return ObjectCloseRequest.new(server, self, @object, object_id)
+              else
+                raise "unknown domain command: #{command}"
+              end
+            else
+              de_ctx = DeserializationContext.new(server, rq, raw_data, nil)
+              return @object.parse(server, self, de_ctx)
+            end
+          when 5 # Control
+            de_ctx = DeserializationContext.new(server, rq, raw_data, nil)
+            return server.hipc_manager.parse(server, self, de_ctx)
+          else
+            raise "unknown request type: #{rq.type}"
+          end
+        end
+
+        def describe_message(rq)
+          parse(nil, rq).describe
+        end
+        
+        def dispatch(server, rq)
+          parse(server, rq).handle
         end
         
         def close
@@ -212,29 +299,12 @@ module Lakebed
       end
       
       class Object
-        def dispatch(session, de_ctx)
-          @current_session = session
-          de_ctx.reset!
+        def parse(server, session, de_ctx)
           cmd = self.class.commands[de_ctx.command_id]
-          if !cmd then
-            session.close
-          else
-            begin
-              session.reply(cmd.invoke(self, de_ctx))
-            rescue DeferralError => e
-              return true
-            #TODO: rescue DeserializationError => e
-            #TODO:  session.close
-            end
-          end
-          return false
+          CommandRequest.new(server, session, self, de_ctx, cmd)
         end
 
         def close
-        end
-        
-        def session
-          @current_session
         end
         
         def is_domain?
@@ -242,12 +312,27 @@ module Lakebed
         end
 
         class Command
-          def initialize(serialization, &impl)
+          def initialize(label, serialization, &impl)
+            @label = label
             @serialization = serialization
             @impl = impl
           end
 
+          attr_reader :label
+
+          def describe_args(de_ctx)
+            de_ctx.reset!
+            
+            @serialization.filter do |s|
+              s.provides_input?
+            end.map do |s|
+              (s.name || "?") + " = " + s.unpack(de_ctx).inspect
+            end.join(", ")
+          end
+          
           def invoke(object, de_ctx)
+            de_ctx.reset!
+            
             args = []
             @serialization.each do |s|
               if s.provides_input? then
@@ -277,9 +362,9 @@ module Lakebed
         end
 
         class << self
-          def command(id, *serialization, &block)
+          def command(id, label, *serialization, &block)
             @commands||= {}
-            @commands[id] = Command.new(serialization, &block)
+            @commands[id] = Command.new(label, serialization, &block)
           end
           attr_reader :commands
         end

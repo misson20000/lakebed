@@ -138,6 +138,10 @@ module Lakebed
           @session.close
         end
 
+        def describe_message(msg)
+          @session.server.describe_message(msg)
+        end
+        
         def send_message(msg, &block)
           begin_transaction(Message::Transaction.new(msg, block))
         end
@@ -170,6 +174,16 @@ module Lakebed
 
         def closed?
           @session.closed?
+        end
+
+        attr_accessor :message_describer
+        
+        def describe_message(msg)
+          if @message_describer then
+            @message_describer.describe_message(msg)
+          else
+            "unknown"
+          end
         end
         
         def receive_message(process, buffer, addr)

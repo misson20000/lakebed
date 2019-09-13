@@ -9,12 +9,15 @@ module Lakebed
         def provides_output?
           false
         end
+
+        attr_reader :name
         
         class RawData < In
-          def initialize(size, packing=nil, alignment=size)
+          def initialize(size, packing=nil, alignment=size, name=nil)
             @size = size
             @packing = packing
             @alignment = alignment
+            @name = name
           end
 
           def unpack(ctx)
@@ -29,6 +32,7 @@ module Lakebed
         
         class Pid < In
           def initialize
+            @name = "pid"
           end
 
           def unpack(ctx)
@@ -45,6 +49,8 @@ module Lakebed
         def provides_output?
           true
         end
+
+        attr_reader :name
         
         class RawData < Out
           def initialize(size, packing=nil, alignment=size)

@@ -43,15 +43,15 @@ module Lakebed
         end
         
         command(
-          0, # Initialize
+          0, :Initialize,
           CMIF::In::Pid.new,
           CMIF::In::RawData.new(8, "Q<")) do |pid, _|
           @initialized = true
         end
 
         command(
-          1, # GetService
-          CMIF::In::RawData.new(8),
+          1, :GetService,
+          CMIF::In::RawData.new(8, nil, 8, "service"),
           CMIF::Out::Handle.new(:move)) do |service_name|
           require_initialization
           if !@sm.services[service_name] then
@@ -70,7 +70,7 @@ module Lakebed
         end
 
         command(
-          2, # RegisterService
+          2, :RegisterService,
           CMIF::In::RawData.new(8),
           CMIF::In::RawData.new(1, "C"),
           CMIF::In::RawData.new(4, "L<"),
@@ -91,7 +91,7 @@ module Lakebed
         end
 
         command(
-          3, # UnregisterService
+          3, :UnregisterService,
           CMIF::In::RawData.new(8)) do |service_name|
           require_initialization
 
@@ -111,14 +111,14 @@ module Lakebed
         end
 
         command(
-          0, # RegisterProcess
+          0, :RegisterProcess,
           CMIF::In::RawData.new(8, "Q<"),
           # TODO: buffers
         ) do |pid|
         end
 
         command(
-          1, # UnregisterProcess
+          1, :UnregisterProcess,
           CMIF::In::RawData.new(8, "Q<")) do |pid|
         end
       end

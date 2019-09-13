@@ -259,7 +259,7 @@ module Lakebed
       session = @handle_table.get_strict(x0, HIPC::Session::Client)
       message = HIPC::Message.parse(self, @current_thread.tls.addr, 0x100)
 
-      suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest")
+      suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest: " + session.describe_message(message))
       session.send_message(message) do |rs|
         suspension.release do
           if rs then
