@@ -27,7 +27,7 @@ module Lakebed
         
         def add_port(port, &block)
           port.wait do
-            add_session(Session.new(port.accept, yield))
+            add_session(Session.new(port.accept, yield, @hipc_manager))
             add_port(port, &block)
             process_deferrals
           end
@@ -35,7 +35,7 @@ module Lakebed
 
         def create_session(object)
           session = HIPC::Session.new
-          add_session(Session.new(session.server, object))
+          add_session(Session.new(session.server, object, @hipc_manager))
           return session.client
         end
         
@@ -120,7 +120,7 @@ module Lakebed
             return nil
           else
             begin
-              @session.reply(@command.invoke(@object, @de_ctx))
+              @session.reply(@command.invoke(@object, @de_ctx, @session))
             rescue DeferralError => e
               return self
               #TODO: rescue DeserializationError => e
@@ -132,9 +132,10 @@ module Lakebed
       end
       
       class Session
-        def initialize(session, object)
+        def initialize(session, object, hipc_manager)
           @ko = session
           @object = object
+          @hipc_manager = hipc_manager
 
           @ko.message_describer = self
         end
@@ -149,7 +150,7 @@ module Lakebed
           case rq.type
           when 2 # Close
             return CloseRequest.new(server, self)
-          when 4, 6 # Request, NewRequest
+          when 4, 6 # Request, RequestWithContext
             # TODO: NewRequest
             if @object.is_domain? then
               # TODO: token
@@ -168,9 +169,9 @@ module Lakebed
               de_ctx = DeserializationContext.new(server, rq, raw_data, nil)
               return @object.parse(server, self, de_ctx)
             end
-          when 5 # Control
+          when 5, 7 # Control, ControlWithContext
             de_ctx = DeserializationContext.new(server, rq, raw_data, nil)
-            return server.hipc_manager.parse(server, self, de_ctx)
+            return @hipc_manager.parse(server, self, de_ctx)
           else
             raise "unknown request type: #{rq.type}"
           end
@@ -304,6 +305,8 @@ module Lakebed
           CommandRequest.new(server, session, self, de_ctx, cmd)
         end
 
+        attr_accessor :session
+        
         def close
         end
         
@@ -330,7 +333,7 @@ module Lakebed
             end.join(", ")
           end
           
-          def invoke(object, de_ctx)
+          def invoke(object, de_ctx, session)
             de_ctx.reset!
             
             args = []
@@ -339,6 +342,8 @@ module Lakebed
                 args.push(s.unpack(de_ctx))
               end
             end
+
+            object.session = session
             
             begin
               rets = object.instance_exec(*args, &@impl)
@@ -401,7 +406,7 @@ module Lakebed
         end
         
         command(
-          0, # ConvertCurrentObjectToDomain
+          0, :ConvertCurrentObjectToDomain,
           Out::RawData.new(4, "L<")) do
           puts "converting to domain"
           domain = DomainObject.new
@@ -411,7 +416,7 @@ module Lakebed
         end
 
         command(
-          1, # CopyFromCurrentDomain
+          1, :CopyFromCurrentDomain,
           In::RawData.new(4, "L<"),
           Out::Handle.new(:move)) do |object_id|
           puts "copying from domain"
@@ -419,21 +424,21 @@ module Lakebed
         end
 
         command(
-          2, # CloneCurrentObject
+          2, :CloneCurrentObject,
           Out::Handle.new(:move)) do
           puts "cloning current object"
           next @server.create_session(session.object)
         end
 
         command(
-          3, # QueryPointerBufferSize
+          3, :QueryPointerBufferSize,
           Out::RawData.new(2, "S<")) do
           puts "querying pointer buffer size"
           next session.pointer_buffer_size
         end
 
         command(
-          4, # CloneCurrentObjectEx
+          4, :CloneCurrentObjectEx,
           In::RawData.new(4, "L<"),
           Out::Handle.new(:move)) do |_|
           raise "unimplemented"
