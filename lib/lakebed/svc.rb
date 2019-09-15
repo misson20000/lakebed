@@ -75,13 +75,16 @@ module Lakebed
       src_addr = x1
       size = x2
 
-      # TODO: check that we're in the stack region
-      alloc = @as_mgr.force(
-        dst_addr, size,
-        {:label => "remapped",
-         :memory_type => MemoryType::Stack,
-         :permission => Perm::RW})
-      alloc.map(@mu)
+      if !@as_mgr.stack_region.encloses_region?(dst_addr, size) then
+        raise ResultError.new(0xdc01)
+      end
+
+      puts "SVCMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
+      @as_mgr.reprotect!(src_addr, size, 0)
+      puts "Reprotected old region..."
+      @as_mgr.dump_mappings
+      puts "Mirroring in new region..."
+      @as_mgr.mirror!(@as_mgr, src_addr, dst_addr, size, MemoryType::Stack, 3)
 
       x0(0)
     end
@@ -97,12 +100,14 @@ module Lakebed
         (dst_addr == 0xFFFFFFFFFFFFE000) &&
         (src_addr == 0xFFFFFE000) &&
         (size == 0x1000)
+
+      puts "SVCUNMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
       
-      if !@as_mgr.addr_aligned?(dst_addr) || !@as_mgr.addr_aligned?(src_addr) then
+      if !Memory::addr_aligned?(dst_addr) || !Memory::addr_aligned?(src_addr) then
         raise ResultError.new(0xcc01)
       end
 
-      if size == 0 || !@as_mgr.size_aligned?(size) then
+      if size == 0 || !Memory::size_aligned?(size) then
         raise ResultError.new(0xca01)
       end
 
@@ -131,13 +136,14 @@ module Lakebed
       meminfo = x0
       addr = x2
 
-      alloc = @as_mgr.describe(addr)
+      mapping = @as_mgr.find_mapping(addr)
+      puts "query memory 0x#{addr.to_s(16)}: #{mapping}"
       @mu.mem_write(meminfo, [
-                      alloc.addr,
-                      alloc.size,
-                      alloc.attributes[:memory_type] || 0,
+                      mapping.addr,
+                      mapping.size,
+                      mapping.type,
                       0,
-                      alloc.attributes[:permission] || 0,
+                      mapping.permissions || 0,
                       0, 0, 0
                     ].pack("Q<Q<L<L<L<L<L<L<"))
       
@@ -332,7 +338,7 @@ module Lakebed
         if info_sub_id != 0 then
           raise ResultError.new(0xf001)
         end
-        x1(object.alias_region.addr)
+        x1(object.as_mgr.alias_region.addr)
         return
       when InfoId::AliasRegionSize
         if !object.is_a?(Process) then
@@ -341,7 +347,7 @@ module Lakebed
         if info_sub_id != 0 then
           raise ResultError.new(0xf001)
         end
-        x1(object.alias_region.size)
+        x1(object.as_mgr.alias_region.size)
         return
       when InfoId::HeapRegionBaseAddr
         if !object.is_a?(Process) then
@@ -350,7 +356,7 @@ module Lakebed
         if info_sub_id != 0 then
           raise ResultError.new(0xf001)
         end
-        x1(object.heap_region.addr)
+        x1(object.as_mgr.heap_region.addr)
         return
       when InfoId::HeapRegionSize
         if !object.is_a?(Process) then
@@ -359,7 +365,7 @@ module Lakebed
         if info_sub_id != 0 then
           raise ResultError.new(0xf001)
         end
-        x1(object.heap_region.size)
+        x1(object.as_mgr.heap_region.size)
         return
       when InfoId::TotalMemoryAvailable
           if !object.is_a?(Process) then
@@ -413,13 +419,13 @@ module Lakebed
           if !object.is_a?(Process) then
             raise ResultError.new(0xe401)
           end
-          x1(object.stack_region.addr)
+          x1(object.as_mgr.stack_region.addr)
           return
         when InfoId::StackRegionSize
           if !object.is_a?(Process) then
             raise ResultError.new(0xe401)
           end
-          x1(object.stack_region.size)
+          x1(object.as_mgr.stack_region.size)
           return
         end
       end

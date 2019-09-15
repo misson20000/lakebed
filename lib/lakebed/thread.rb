@@ -24,12 +24,15 @@ module Lakebed
       if !params.key?(:entry) then raise "need to specify entry point" end
       if !params.key?(:sp) then raise "need to specify stack pointer" end
       if !params.key?(:tls) then
-        tls = @process.as_mgr.alloc(
-          @process.sizes[:tls],
+        tls = @process.as_mgr.alloc_region(@process.sizes[:tls])
+        res = @process.as_mgr.alloc_memory_resource(tls.size)
+        @process.as_mgr.map_slice!(
+          tls.addr,
+          res.principal_slice,
+          MemoryType::ThreadLocal,
+          Perm::RW,
           :label => "TLS",
-          :memory_type => MemoryType::ThreadLocal,
-          :permission => Perm::RW)
-        tls.map(@process.mu)
+          :label_base => tls.addr)
         params[:tls] = tls
         params[:owns_tls] = true
       end
@@ -167,7 +170,7 @@ module Lakebed
     
     def destroy
       if @owns_tls then
-        @tls.unmap(@proc.mu)
+        @process.as_mgr.unmap!(@tls.addr, @tls.size)
       end
     end
 

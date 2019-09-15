@@ -13,11 +13,8 @@ module Lakebed
     BASE_ADDR = 0x71000000
     
     DEFAULT_SIZES = {
-      :heap_region => 64 * 1024 * 1024, # 64 MiB
-      :stack => 8 * 1024 * 1024, # 8 MiB
+      :initial_stack => 8 * 1024 * 1024, # 8 MiB
       :tls => 0x1000, # TLS blocks are actually only 0x200, but this simplifies allocation
-      :alias_region => 0x20000, # arbitrary
-      :stack_region => 0x80000000,
     }
 
     def initialize(kernel, params = {})
@@ -36,31 +33,12 @@ module Lakebed
       @random_entropy = [4, 1, 6, 5]
       
       @mu = UnicornEngine::Uc.new(UnicornEngine::UC_ARCH_ARM64, UnicornEngine::UC_MODE_ARM)
-      @as_mgr = Memory::AddressSpaceManager.new(@params[:address_space_config])
+      @as_mgr = Memory::AddressSpaceManager.new(self, @params[:address_space_config])
       @handle_table = HandleTable.new(self)
       @threads = []
       @condvar_suspensions = []
       @pool_partition = params[:pool_partition] || kernel.pool_partitions[PoolPartitionId::System]
       @resource_limit = params[:resource_limit] || kernel.system_resource_limit
-      
-      @alias_region = @as_mgr.alloc(
-        @sizes[:alias_region],
-        :label => "alias region",
-        :memory_type => MemoryType::Reserved,
-        :permission => Perm::None)
-
-      @heap_region = @as_mgr.alloc(
-        @sizes[:heap_region],
-        :label => "heap region",
-        :memory_type => MemoryType::Reserved,
-        :permission => Perm::None)
-
-      @stack_region = @as_mgr.alloc(
-        @as_mgr.config.stack_region_size,
-        :label => "stack region",
-        :memory_type => MemoryType::Reserved,
-        :permission => Perm::None)
-
       @pending_error = nil      
       
       # enable NEON
@@ -98,9 +76,16 @@ module Lakebed
           end
         end)
 
+      # add unmapped read hook
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_MEM_READ_UNMAPPED, Proc.new do |uc, access, address, size, value|
+          @pending_error = UnmappedReadError.new(self, size, address)
+          @mu.emu_stop
+        end)
+      
       # add unmapped write hook
       @mu.hook_add(
-        UnicornEngine::UC_HOOK_MEM_WRITE_UNMAPPED, Proc.new do |uc, access, address, size, value|
+        UnicornEngine::UC_HOOK_MEM_WRITE_UNMAPPED, Proc.new do |uc, access, address, size, value|          
           if address == 0x8 && [value].pack("q<").unpack("Q<")[0] == 0xA55AF00DDEADCAFE then
             @pending_error = StratosphereAbortError.new(self)
           else
@@ -109,16 +94,33 @@ module Lakebed
           @mu.emu_stop
         end)
 
+      # add protection violation hooks for memory manager
       @mu.hook_add(
-        UnicornEngine::UC_HOOK_MEM_WRITE_PROT, Proc.new do |uc, access, address, size, value|
-          @pending_error = InvalidWriteError.new(self, [value].pack("Q<"), address)
+        UnicornEngine::UC_HOOK_MEM_READ_PROT, Proc.new do |uc, access, address, size, value|
+          if @as_mgr.find_mapping(address).acquire_permissions!(Perm::R) then
+            next
+          end
+
+          @pending_error = UnmappedReadError.new(self, size, address)
           @mu.emu_stop
         end)
-
-      # add unmapped read hook
       @mu.hook_add(
-        UnicornEngine::UC_HOOK_MEM_READ_UNMAPPED, Proc.new do |uc, access, address, size, value|
+        UnicornEngine::UC_HOOK_MEM_FETCH_PROT, Proc.new do |uc, access, address, size, value|
+          puts "hit bad fetch at #{address.to_s(16)}"
+          if @as_mgr.find_mapping(address).acquire_permissions!(Perm::RX) then
+            next
+          end
+
           @pending_error = UnmappedReadError.new(self, size, address)
+          @mu.emu_stop
+        end)
+      @mu.hook_add(
+        UnicornEngine::UC_HOOK_MEM_WRITE_PROT, Proc.new do |uc, access, address, size, value|
+          if @as_mgr.find_mapping(address).acquire_permissions!(Perm::RW) then
+            next
+          end
+
+          @pending_error = InvalidWriteError.new(self, [value].pack("Q<"), address)
           @mu.emu_stop
         end)
     end
@@ -177,13 +179,17 @@ module Lakebed
     end
     
     def start
-      stack_alloc = @as_mgr.alloc(
-        @sizes[:stack],
+      stack_resource = @as_mgr.alloc_memory_resource(@sizes[:initial_stack], "initial stack")
+      
+      @as_mgr.map_slice!(
+        @as_mgr.stack_region.addr,
+        stack_resource.principal_slice,
+        MemoryType::Stack,
+        Perm::RW,
         :label => "main thread stack",
-        :memory_type => MemoryType::Stack,
-        :permission => Perm::RW)
-      stack_alloc.map(@mu)
-      main_thread = LKThread.new(self, :entry => BASE_ADDR, :sp => stack_alloc.addr + stack_alloc.size)
+        :label_base => @as_mgr.stack_region.addr)
+      
+      main_thread = LKThread.new(self, :entry => BASE_ADDR, :sp => @as_mgr.stack_region.addr + @sizes[:initial_stack])
       main_thread_handle = @handle_table.insert(main_thread)
       main_thread.start do
         x0(0) # userland exception handling
@@ -203,10 +209,6 @@ module Lakebed
     attr_reader :handle_table
     attr_reader :current_thread
 
-    attr_reader :alias_region
-    attr_reader :heap_region
-    attr_reader :stack_region
-
     def to_s
       "Process<#{name}, pid 0x#{@pid.to_s(16)}>"
     end
@@ -215,18 +217,17 @@ module Lakebed
       addr = BASE_ADDR
       nso.segments.each do |seg|
         if seg.content.bytesize > 0 then
-          alloc = @as_mgr.force(
-            addr, seg.content.bytesize, {
-              :label => "nso code",
-              :memory_type => seg.permissions == Perm::RX ?
-                                MemoryType::CodeStatic :
-                                MemoryType::CodeMutable,
-              :permission => seg.permissions
-            })
-          @mu.mem_map(alloc.addr, alloc.size)
-          @mu.mem_write(alloc.addr, seg.content)
-          @mu.mem_protect(alloc.addr, alloc.size, seg.permissions)
-          addr+= alloc.size
+          resource = @as_mgr.wrap_memory_resource(seg.content, "nso segment with #{seg.permissions}")
+          @as_mgr.map_slice!(
+            addr, resource.principal_slice,
+            seg.permissions == Perm::RX ?
+              MemoryType::CodeStatic :
+              MemoryType::CodeMutable,
+            seg.permissions,
+            :label => "nso code",
+            :label_base => BASE_ADDR
+          )
+          addr+= seg.content.bytesize
         end
       end
       return nso
