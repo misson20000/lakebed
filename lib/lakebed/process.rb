@@ -37,6 +37,7 @@ module Lakebed
       @handle_table = HandleTable.new(self)
       @threads = []
       @condvar_suspensions = []
+      @mutex_suspensions = []
       @pool_partition = params[:pool_partition] || kernel.pool_partitions[PoolPartitionId::System]
       @resource_limit = params[:resource_limit] || kernel.system_resource_limit
       @pending_error = nil      

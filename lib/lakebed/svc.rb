@@ -29,6 +29,8 @@ module Lakebed
         svc_wait_synchronization
       when 0x19
         svc_cancel_synchronization
+      when 0x1c
+        svc_wait_process_wide_key_atomic
       when 0x1d
         svc_signal_process_wide_key
       when 0x1f
@@ -258,10 +260,23 @@ module Lakebed
       x0(0)
     end
 
+    def svc_wait_process_wide_key_atomic
+      mutex = x0
+      condvar = x1
+      handle = x2
+      timeout = x3
+
+      mutex_release(mutex)
+      suspension = LKThread::Suspension.new(@current_thread, "svcWaitProcessWideKeyAtomic(0x#{condvar.to_s(16)})")
+      @condvar_suspensions.push(CondvarSuspension.new(condvar, mutex, handle, suspension))
+    end
+    
     def svc_signal_process_wide_key
       condvar = x0
       num_threads_to_wake = x1
 
+      Logger.log_for_thread(@current_thread, "svcSignalProcessWideKey(0x#{condvar.to_s(16)})")
+      
       suspensions = @condvar_suspensions.select do |s|
         s.condvar == condvar
       end
@@ -271,7 +286,8 @@ module Lakebed
       end
 
       suspensions.each do |s|
-        s.release do
+        s.suspension.release do
+          mutex_lock_for_thread(s.mutex, s.suspension.thread, s.handle, nil)
           x0(0)
         end
       end
@@ -688,6 +704,47 @@ module Lakebed
       @kernel.secure_monitor.call(self, smc_sub_id, smc_args).each_with_index do |v, i|
         Logger.log_for_thread(@current_thread, "  x#{i} => 0x#{v.to_s(16)}")
         x(i, v)
+      end
+    end
+
+    CondvarSuspension = Struct.new(:condvar, :mutex, :handle, :suspension)
+    MutexSuspension = Struct.new(:mutex, :handle, :suspension)
+    MutexHasWaitersFlag = 0x40000000
+    
+    def mutex_lock_for_thread(mutex, thread, requesting_handle, holding_handle)
+      value = @mu.mem_read(mutex, 4).unpack("L<")[0]
+
+      # if mutex is not held...
+      if (holding_handle == nil && value == 0) || (holding_handle != nil && value != (holding_handle | MutexHasWaitersFlag)) then
+        value = requesting_handle
+        @mu.mem_write(mutex, [value].pack("L<")[0])
+        return
+      end
+
+      suspension = LKThread::Suspension.new(thread, "lock mutex(0x#{mutex.to_s(16)})")
+      @mutex_suspensions.push(MutexSuspension.new(mutex, requesting_handle, suspension))
+    end
+
+    def mutex_release(mutex)
+      suspensions = @mutex_suspensions.select do |s|
+        s.mutex == mutex
+      end
+
+      if suspensions.empty? then
+        @mu.mem_write(mutex, [0].pack("L<"))
+        return
+      end
+
+      s = suspensions.pop
+
+      value = s.handle
+      if !suspensions.empty? then
+        value|= MutexHasWaitersFlag
+      end
+
+      @mu.mem_write(mutex, [value].pack("L<"))
+      s.release do
+        x0(0)
       end
     end
   end
