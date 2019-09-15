@@ -51,6 +51,8 @@ module Lakebed
 
       @fresh_suspension = Suspension.new(self, "fresh thread")
       @suspension = @fresh_suspension
+      @synchronization = nil
+      @synchronization_canceled = false
       @current = false
     end
 
@@ -65,6 +67,7 @@ module Lakebed
         @thread.suspend(self)
       end
 
+      attr_reader :thread
       attr_reader :description
 
       def release(&proc)
@@ -81,7 +84,23 @@ module Lakebed
     attr_accessor :fprs
     attr_accessor :nzcv
     attr_accessor :sp
+    attr_accessor :synchronization
+    attr_accessor :synchronization_canceled
     attr_reader :tls
+
+    def cancel_synchronization
+      @synchronization_canceled = true
+      if @synchronization then
+        Logger.log_for_thread(
+          self,
+          "cancelled synchronization")
+        @synchronization.release do
+          @synchronization = nil
+          @synchronization_canceled = false
+          @process.x0(0xec01)
+        end
+      end
+    end
     
     def start
       if @suspension != @fresh_suspension || @fresh_suspension == nil then

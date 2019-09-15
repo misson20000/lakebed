@@ -207,8 +207,16 @@ module Lakebed
       Logger.log_for_thread(
         @current_thread,
         "svcWaitSynchronization(\n  " +
-        (objects.map do |obj| obj.inspect end).join(",\n  ") + ")")
+        (objects.map do |obj| obj.inspect end).join(",\n  ") + "), timeout = #{timeout}")
 
+      if @current_thread.synchronization_canceled then
+        Logger.log_for_thread(
+          @current_thread,
+          "  CANCELLED")
+        x0(0xec01)
+        @current_thread.synchronization_canceled = false
+      end
+      
       thread = @current_thread
       suspension = LKThread::Suspension.new(thread, "svcWaitSynchronization")
       procs = []
@@ -220,6 +228,7 @@ module Lakebed
             obj.wait do
               Logger.log_for_thread(thread, "got signal from #{obj}")
               suspension.release do
+                thread.synchronization = nil
                 x0(0)
                 x1(i)
               end
@@ -233,11 +242,13 @@ module Lakebed
           ])
       end
       earlywake = false
+      thread.synchronization = suspension
     end
     
     def svc_cancel_synchronization
       if x0 == 0 then
         # libstratosphere does this sometimes...
+        # TODO: convince SciresM to fix this
         x0(0xe401)
         return
       end
