@@ -15,6 +15,8 @@ module Lakebed
         svc_query_memory
       when 0x8
         svc_create_thread
+      when 0x9
+        svc_start_thread
       when 0xb
         svc_sleep_thread
       when 0xc
@@ -158,8 +160,19 @@ module Lakebed
 
       # x5: processor id is ignored
 
+      @threads.push(thread)
+      @kernel.scheduler.add_thread(thread)
+
       x0(0)
       x1(@handle_table.insert(thread))
+    end
+
+    def svc_start_thread
+      thread = @handle_table.get_strict(x0, LKThread)
+      thread.start do
+        # thread context is already preloaded
+      end
+      x0(0)
     end
     
     def svc_sleep_thread
