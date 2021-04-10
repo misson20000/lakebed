@@ -75,6 +75,72 @@ module Lakebed
         @thread.resume(self, proc)
       end
     end
+
+    class Synchronization < Suspension
+      def initialize(thread)
+        super(thread, "synchronization")
+
+        @objects = []
+        @is_finished = false
+      end
+      
+      def push_object(object, &proc)
+        if @is_finished then
+          raise "attempt to add object to synchronization that has already finished"
+        end
+        
+        @objects.push(
+          :object => object, :proc => object.wait do
+            self.finish_synchronization!
+            
+            self.release do
+              proc.call
+            end
+          end)
+      end
+      
+      def cancel_synchronization!
+        self.finish_synchronization!
+        
+        self.release do
+          @thread.process.x0(0xec01)
+        end
+      end
+
+      def time_out!
+        self.finish_synchronization!
+        
+        self.release do
+          @thread.process.x0(0xea01)
+        end
+      end
+
+      def release(&proc)
+        @thread.synchronization = nil
+        
+        super(&proc)
+      end
+
+      def is_finished?
+        @is_finished
+      end
+      
+      def finish_synchronization!
+        if @is_finished then
+          raise "attempt to finish synchronization that has already finished"
+        end
+        
+        Logger.log_for_thread(@thread, "finishing synchronization")
+
+        # cancel all outstanding waits
+        @objects.each do |obj|
+          obj[:object].unwait(obj[:proc])
+        end
+
+        @objects = []
+        @is_finished = true
+      end
+    end
     
     attr_reader :process
     attr_reader :tid
@@ -89,15 +155,95 @@ module Lakebed
     attr_reader :tls
 
     def cancel_synchronization
-      @synchronization_canceled = true
       if @synchronization then
         Logger.log_for_thread(
           self,
-          "cancelled synchronization")
-        @synchronization.release do
-          @synchronization = nil
-          @synchronization_canceled = false
-          @process.x0(0xec01)
+          "cancelling active synchronization")
+
+        sync = @synchronization
+        @synchronization = nil
+        
+        sync.cancel_synchronization!
+      else
+        Logger.log_for_thread(
+          self,
+          "tried to cancel synchronization while not synchronizing")
+        @synchronization_canceled = true
+      end
+    end
+
+    def synchronize(objects, timeout)
+      if @synchronization then
+        raise "already synchronizing"
+      end
+
+      if @suspension then
+        raise "already suspended"
+      end
+      
+      suspension = Synchronization::new(self)
+      @synchronization = suspension
+      
+      Logger.log_for_thread(
+        self, "synchronizing",
+        :timeout => timeout)
+
+      if @synchronization_canceled then
+        Logger.log_for_thread(
+          self, "  synchronization was already canceled!")
+
+        @synchronization_canceled = false
+
+        suspension.cancel_synchronization!
+
+        return
+      end
+
+      if timeout == 0 then
+        if objects.size == 0 then
+          Logger.log_for_thread(
+            self, "  called with instant timeout, no objects, and was not cancelled, so timing out instantly")
+
+          suspension.time_out!
+
+          return
+        else
+          Logger.log_for_thread(
+            self, "  called with instant timeout, so checking objects...")
+          
+          objects.each_with_index.map do |obj, i|
+            if obj.is_signaled? then
+              suspension.release do
+                yield obj, i
+              end
+              return
+            end
+          end
+          
+          Logger.log_for_thread(
+            self, "  no objects were signaled, so timing out immediately")
+
+          suspension.time_out!
+
+          return
+        end
+      end
+
+      objects.each_with_index do |obj, i|
+        Logger.log_for_thread(
+          self, "  synchronizing on #{obj}")
+        
+        suspension.push_object(obj) do
+          Logger.log_for_thread(
+            self, "  finished synchronizing (object #{obj}, index #{i})")
+          yield obj, i
+        end
+
+        # if we woke up early, don't keep adding objects
+        if suspension.is_finished? then
+          Logger.log_for_thread(
+            self, "finished synchronizing early, so not waiting on any more objects")
+          return
         end
       end
     end

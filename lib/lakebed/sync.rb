@@ -2,6 +2,8 @@ module Lakebed
   class Waitable
     def initialize
       @waiting_procs = []
+      @signaling_procs = []
+      @is_signaling = false
     end
     
     def wait(&proc)
@@ -15,15 +17,25 @@ module Lakebed
     
     def unwait(proc)
       @waiting_procs.delete(proc)
+      @signaling_procs.delete(proc)
     end
     
     def signal
       if is_signaled? then
-        procs = @waiting_procs
-        @waiting_procs = []
-        procs.each do |p|
-          p.call
+        if @is_signaling then
+          raise "object signaled while already signaling"
         end
+        
+        @is_signaling = true
+        
+        @signaling_procs = @waiting_procs
+        @waiting_procs = []
+
+        while !@signaling_procs.empty? do
+          @signaling_procs.pop.call
+        end
+
+        @is_signaling = false
       end
     end
   end

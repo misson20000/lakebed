@@ -206,45 +206,11 @@ module Lakebed
         @handle_table.get_strict(h, Waitable)
       end
 
-      Logger.log_for_thread(
-        @current_thread,
-        "svcWaitSynchronization(\n  " +
-        (objects.map do |obj| obj.inspect end).join(",\n  ") + "), timeout = #{timeout}")
-
-      if @current_thread.synchronization_canceled then
-        Logger.log_for_thread(
-          @current_thread,
-          "  CANCELLED")
-        x0(0xec01)
-        @current_thread.synchronization_canceled = false
-      end
-      
       thread = @current_thread
-      suspension = LKThread::Suspension.new(thread, "svcWaitSynchronization")
-      procs = []
-      earlywake = true
-      objects.each_with_index.map do |obj, i|
-        procs.push(
-          [
-            obj,
-            obj.wait do
-              Logger.log_for_thread(thread, "got signal from #{obj}")
-              suspension.release do
-                thread.synchronization = nil
-                x0(0)
-                x1(i)
-              end
-              procs.each do |pr|
-                pr[0].unwait(pr[1])
-              end
-              if earlywake then
-                return
-              end
-            end
-          ])
+      thread.synchronize(objects, timeout) do |obj, i|
+        x0(0)
+        x1(i)
       end
-      earlywake = false
-      thread.synchronization = suspension
     end
     
     def svc_cancel_synchronization
@@ -256,6 +222,7 @@ module Lakebed
       end
       
       thread = @handle_table.get_strict(x0, LKThread)
+      Logger.log_for_thread(@current_thread, "svcCancelSynchronization(thread 0x#{thread.tid.to_s(16)})")
       thread.cancel_synchronization
       x0(0)
     end
@@ -547,13 +514,17 @@ module Lakebed
       handles = @mu.mem_read(x1, x2 * 4).unpack("L<*")
       timeout = x4
 
-      if x3 != 0 then
-        Logger.log_for_thread(@current_thread, "replying:")
+      reply_to_handle = x3 & 0xffffffff
+
+      Logger.log_for_thread(@current_thread, "svcReplyAndReceive", :timeout => timeout, :reply_to_handle => reply_to_handle)
+      
+      if reply_to_handle != 0 then
+        Logger.log_for_thread(@current_thread, "  replying: (handle (w3): 0x#{reply_to_handle.to_s(16)})")
         @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump do |i,h,p|
-          Logger.log_for_thread(@current_thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
+          Logger.log_for_thread(@current_thread, "    #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
         end
         
-        reply_session = @handle_table.get_strict(x3, HIPC::Session::Server)
+        reply_session = @handle_table.get_strict(reply_to_handle, HIPC::Session::Server)
         reply_session.reply_message(self, HIPC::Message.parse(self, @current_thread.tls.addr, 0x100))
       end
       
@@ -561,49 +532,22 @@ module Lakebed
         @handle_table.get_strict(h, [HIPC::Port::Server, HIPC::Session::Server])
       end
 
-      if objects.size == 0 then
-        # timeout.
-        # not an error, so we don't use ResultError.
-        x0(0xea01)
-        return
-      end
-
       thread = @current_thread
-      suspension = LKThread::Suspension.new(@current_thread, "svcReplyAndReceive")
-      procs = []
-      earlywake = true
-      Logger.log_for_thread(thread, "svcReplyAndReceive:")
-      objects.each_with_index.map do |obj, i|
-        Logger.log_for_thread(thread, "waiting on #{obj}")
-        procs.push(
-          [
-            obj,
-            obj.wait do
-              suspension.release do
-                x0(0)
-                if obj.is_a? HIPC::Session::Server then
-                  if obj.closed? then
-                    x0(0xf601)
-                  else
-                    obj.receive_message(self, thread.tls.addr, 0x100)
-                    Logger.log_for_thread(thread, "receiving:")
-                    @mu.mem_read(thread.tls.addr, 0x40).hexdump do |i,h,p|
-                      Logger.log_for_thread(thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
-                    end
-                  end
-                end
-                x1(i)
-              end
-              procs.each do |pr|
-                pr[0].unwait(pr[1])
-              end
-              if earlywake then
-                return
-              end
+      thread.synchronize(objects, timeout) do |obj, i|
+        x0(0)
+        if obj.is_a? HIPC::Session::Server then
+          if obj.closed? then
+            x0(0xf601)
+          else
+            obj.receive_message(self, thread.tls.addr, 0x100)
+            Logger.log_for_thread(thread, "receiving:")
+            @mu.mem_read(thread.tls.addr, 0x40).hexdump do |i,h,p|
+              Logger.log_for_thread(thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
             end
-          ])
+          end
+        end
+        x1(i)
       end
-      earlywake = false
     end
 
     def svc_create_event
