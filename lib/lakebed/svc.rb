@@ -507,7 +507,11 @@ module Lakebed
 
     def svc_accept_session
       server = @handle_table.get_strict(x1, HIPC::Port::Server)
-      x1(@handle_table.insert(server.accept))
+      session = server.accept
+      
+      Logger.log_for_thread(@current_thread, "svcAcceptSession", :server => server, :session => session)
+      
+      x1(@handle_table.insert(session))
       x0(0)
     end
 
