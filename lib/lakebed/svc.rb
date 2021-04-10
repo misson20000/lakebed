@@ -217,6 +217,7 @@ module Lakebed
       if x0 == 0 then
         # libstratosphere does this sometimes...
         # TODO: convince SciresM to fix this
+        raise "does libstratosphere still do this?"
         x0(0xe401)
         return
       end
