@@ -124,7 +124,7 @@ module Lakebed
         end
       end
 
-      if !@stack_region.within?(dst_addr, size) then
+      if !@as_mgr.stack_region.encloses_region?(dst_addr, size) then
         if is_libnx_quirk then
           x0(0xdc01)
           return
