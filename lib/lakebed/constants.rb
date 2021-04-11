@@ -121,16 +121,9 @@ module Lakebed
     end
 
     def ams_target
-      if @numeric < PK1_200 then return 1 end
-      if @numeric < PK1_300 then return 2 end
-      if @numeric < PK1_400 then return 3 end
-      if @numeric < PK1_500 then return 4 end
-      if @numeric < PK1_600 then return 5 end
-      if @numeric < PK1_620 then return 6 end
-      if @numeric < PK1_700 then return 7 end
-      if @numeric < PK1_800 then return 8 end
-      # TODO: if @numeric < PK1_810 then return 9 end
-      return 10
+      return (@target[0] << 24) |
+             (@target[1] << 16) |
+             (@target[2] << 8)
     end
 
     PK1_100 =      0x1c2
@@ -173,7 +166,7 @@ module Lakebed
     NewKeyGeneration5x = 16
     Package2Hash5x = 17
     
-    ExosphereVersion = 65000
+    ExosphereApiVersion = 65000
     NeedsReboot = 65001
     NeedsShutdown = 65002
     ExosphereVerhash = 65003
