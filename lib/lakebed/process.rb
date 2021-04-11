@@ -19,7 +19,7 @@ module Lakebed
 
     def initialize(kernel, params = {})
       @kernel = kernel
-      @pid = kernel.allocate_pid
+      @pid = kernel.allocate_pid(self)
       @params = params
       @params[:address_space_config]||=
         kernel.environment.target_firmware >= TargetVersion::PK1_200 ?

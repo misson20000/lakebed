@@ -73,6 +73,7 @@ module Lakebed
       # on 5.0.0+, KIPs start at PID 1
       @next_pid = 1
       @next_tid = 0x250
+      @processes = {}
       @hle_modules = {}
 
       @port_notifications = []
@@ -86,6 +87,7 @@ module Lakebed
     attr_accessor :secure_monitor
     attr_reader :pool_partitions
     attr_reader :system_resource_limit
+    attr_reader :processes
 
     def load_hle_module(mod)
       @hle_modules[mod] = mod.new(self)
@@ -124,8 +126,11 @@ module Lakebed
       10
     end
     
-    def allocate_pid
+    def allocate_pid(proc)
       pid = @next_pid
+
+      @processes[pid] = proc
+      
       @next_pid+= 1
       return pid
     end

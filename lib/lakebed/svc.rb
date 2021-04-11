@@ -61,6 +61,8 @@ module Lakebed
         svc_create_event
       when 0x53
         svc_create_interrupt_event
+      when 0x65
+        svc_get_process_list
       when 0x6f
         svc_get_system_info
       when 0x70
@@ -626,6 +628,20 @@ module Lakebed
       Logger.log_for_thread(@current_thread, "created interrupt event", :irq => irq, :type => type, :event => event)
       
       @kernel.interrupt_events[irq] = event
+    end
+
+    def svc_get_process_list
+      buffer = x1
+      buffer_size = x2
+
+      pids = @kernel.processes.each_pair.map do |pair|
+        pair[0]
+      end
+
+      @mu.mem_write(buffer, pids.pack("Q<*").byteslice(0, buffer_size))
+      
+      x0(0)
+      x1(pids.size)
     end
 
     def svc_get_system_info
