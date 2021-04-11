@@ -178,7 +178,17 @@ module Lakebed
     end
     
     def svc_sleep_thread
-      Logger.log_for_thread(@current_thread, "sleep #{x0}")
+      thread = @current_thread
+      
+      Logger.log_for_thread(thread, "sleep #{x0}")
+
+      suspension = LKThread::Suspension.new(thread, "sleep")
+      
+      @kernel.scheduler.add_sleep do
+        suspension.release do
+          Logger.log_for_thread(thread, "woke from sleep")
+        end
+      end
     end
 
     def svc_get_thread_priority

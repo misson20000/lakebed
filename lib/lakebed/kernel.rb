@@ -5,8 +5,13 @@ module Lakebed
   class Scheduler
     def initialize
       @threads = []
+      @sleeps = []
     end
 
+    def add_sleep(&proc)
+      @sleeps.push(proc)
+    end
+    
     def add_thread(thread)
       @threads.push(thread)
     end
@@ -20,6 +25,15 @@ module Lakebed
     def next_thread
       @threads.find do |t|
         !t.suspended?
+      end
+    end
+
+    def wake_sleepers
+      sleeps = @sleeps
+      @sleeps = []
+
+      sleeps.each do |proc|
+        proc.call
       end
     end
   end
@@ -132,6 +146,11 @@ module Lakebed
           @last_thread = next_thread
         end
         next_thread.process.continue(next_thread)
+
+        if !@scheduler.has_next? then
+          # try to wake some sleepers if we have any, then keep going
+          @scheduler.wake_sleepers
+        end
       end
     end
   end
