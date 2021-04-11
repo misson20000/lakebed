@@ -151,7 +151,7 @@ module Lakebed
   module ConfigItem # for smcGetConfigUser
     DisableProgramVerification = 1
     DramId = 2
-    SecurityEngineIrq = 3
+    SecurityEngineInterruptNumber = 3
     Version = 4
     HardwareType = 5
     IsRetail = 6
@@ -172,5 +172,9 @@ module Lakebed
     NeedsShutdown = 65002
     ExosphereVerhash = 65003
     HasRcmBugPatch = 65004
+  end
+
+  module InterruptId
+    SecurityEngineUser = 44
   end
 end

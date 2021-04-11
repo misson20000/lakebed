@@ -18,6 +18,8 @@ module Lakebed
             case args[0]
             when ConfigItem::DisableProgramVerification
               config = 0
+            when ConfigItem::SecurityEngineInterruptNumber
+              config = InterruptId::SecurityEngineUser
             when ConfigItem::MemoryArrange
               config = 0
             when ConfigItem::ExosphereApiVersion
