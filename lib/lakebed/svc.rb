@@ -7,6 +7,8 @@ module Lakebed
   class Process
     def svc(id)
       case id
+      when 0x1
+        svc_set_heap_size
       when 0x4
         svc_map_memory
       when 0x5
@@ -76,6 +78,37 @@ module Lakebed
       end
     end
 
+    def svc_set_heap_size
+      size = x1
+      
+      if size > @as_mgr.heap_region.size then
+        raise "attempted to set heap too large"
+      end
+
+      if size & 0xfff != 0 then
+        raise "attempted to set bad heap size"
+      end
+
+      if @heap_resource then
+        raise "TODO: implement resizing heap"
+      end
+
+      @heap_resource = @as_mgr.alloc_memory_resource(size, "heap")
+      
+      @as_mgr.map_slice!(
+        @as_mgr.heap_region.addr,
+        @heap_resource.principal_slice,
+        MemoryType::Heap,
+        Perm::RW,
+        :label => "heap",
+        :label_base => @as_mgr.heap_region.addr)
+
+      Logger.log_for_thread(@current_thread, "resized heap", :size => size.to_s(16), :addr => @as_mgr.heap_region.addr.to_s(16))
+      
+      x0(0)
+      x1(@as_mgr.heap_region.addr)
+    end
+    
     def svc_map_memory
       dst_addr = x0
       src_addr = x1
