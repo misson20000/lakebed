@@ -143,7 +143,11 @@ module Lakebed
         end
         
         def send_message(msg, &block)
-          begin_transaction(Message::Transaction.new(msg, block))
+          if @session.closed? then
+            block.call(nil)
+          else
+            begin_transaction(Message::Transaction.new(msg, block))
+          end
         end
         
         def begin_transaction(transaction)
