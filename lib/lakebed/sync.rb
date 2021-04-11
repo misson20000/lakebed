@@ -72,6 +72,7 @@ module Lakebed
     
     class Client < Waitable
       def initialize(event)
+        super()
         @event = event
       end
 

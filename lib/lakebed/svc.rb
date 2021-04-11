@@ -23,6 +23,8 @@ module Lakebed
         svc_get_thread_priority
       when 0xd
         svc_set_thread_priority
+      when 0x11
+        svc_signal_event
       when 0x16
         svc_close_handle
       when 0x18
@@ -203,6 +205,12 @@ module Lakebed
       x0(0)
     end
 
+    def svc_signal_event
+      event = @handle_table.get_strict(x0, Event::Server)
+      event.signal
+      x0(0)
+    end
+    
     def svc_close_handle
       @handle_table.close(x0)
       x0(0)
