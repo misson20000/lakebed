@@ -106,7 +106,7 @@ module Lakebed
       @port_notifications = []
       @port_notifications+= notifs.filter do |n|
         if n[:port] == port then
-          n[:block].call(@named_ports[port])
+          n[:proc].call(@named_ports[port])
           false
         else
           true
