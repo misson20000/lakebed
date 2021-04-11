@@ -145,6 +145,7 @@ module Lakebed
 
   module SmcSubId
     GetConfig = 0xC3000002
+    GenerateRandomBytes = 0xC3000006
   end
   
   module ConfigItem # for smcGetConfigUser
