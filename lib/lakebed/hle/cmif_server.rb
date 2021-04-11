@@ -43,8 +43,11 @@ module Lakebed
           session.ko.wait do
             rq = session.ko.receive_message_for_hle
             session.dispatch(self, rq)
+
+            if !session.ko.closed? then
+              add_session(session)
+            end
             
-            add_session(session)
             process_deferrals
           end
         end
@@ -149,7 +152,7 @@ module Lakebed
           raw_data = rq.raw_data.byteslice(raw_data_offset, rq.raw_data.bytesize - raw_data_offset)
           case rq.type
           when 2 # Close
-            return CloseRequest.new(server, self)
+            return SessionCloseRequest.new(server, self)
           when 4, 6 # Request, RequestWithContext
             # TODO: NewRequest
             if @object.is_domain? then
