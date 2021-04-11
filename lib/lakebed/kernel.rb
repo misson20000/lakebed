@@ -59,6 +59,7 @@ module Lakebed
       @scheduler = Scheduler.new
       @strict_svcs = false
       @named_ports = Hash.new
+      @interrupt_events = []
       @secure_monitor = HLE::SecureMonitor::Exosphere.new(environment)
       @pool_partitions = [
         # TODO: pick some better numbers here
@@ -81,6 +82,7 @@ module Lakebed
     attr_reader :scheduler
     attr_accessor :strict_svcs
     attr_reader :named_ports
+    attr_reader :interrupt_events
     attr_accessor :secure_monitor
     attr_reader :pool_partitions
     attr_reader :system_resource_limit

@@ -59,6 +59,8 @@ module Lakebed
         svc_reply_and_receive
       when 0x45
         svc_create_event
+      when 0x53
+        svc_create_interrupt_event
       when 0x6f
         svc_get_system_info
       when 0x70
@@ -612,7 +614,20 @@ module Lakebed
       x1(@handle_table.insert(event.server))
       x2(@handle_table.insert(event.client))
     end
-    
+
+    def svc_create_interrupt_event
+      irq = x1
+      type = x2
+
+      event = Event.new
+      x0(0)
+      x1(@handle_table.insert(event.client))
+
+      Logger.log_for_thread(@current_thread, "created interrupt event", :irq => irq, :type => type, :event => event)
+      
+      @kernel.interrupt_events[irq] = event
+    end
+
     def svc_get_system_info
       info_id = x1
       handle = x2
