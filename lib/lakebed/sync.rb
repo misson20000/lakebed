@@ -23,7 +23,8 @@ module Lakebed
     def signal
       if is_signaled? then
         if @is_signaling then
-          raise "object signaled while already signaling"
+          @signaling_procs = @signaling_procs.concat(@waiting_procs)
+          return
         end
         
         @is_signaling = true

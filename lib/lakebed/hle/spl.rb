@@ -1,21 +1,13 @@
-require_relative "cmif_server.rb"
-require_relative "service_manager.rb"
+require_relative "hle_service.rb"
 
 module Lakebed
   module HLE
-    class SPL
-      def initialize(kernel)
-        @kernel = kernel
-
-        sm = @kernel.get_hle_module(Lakebed::HLE::ServiceManager)
-        
-        @server = CMIF::Server.new
-        @server.add_port(sm.register_for_hle("spl:")) do
+    class SPL < HLEService
+      def register_services
+        register("spl:") do
           IGeneralInterface.new(self)
         end
       end
-
-      attr_reader :kernel
       
       class IGeneralInterface < CMIF::Object
         def initialize(spl)

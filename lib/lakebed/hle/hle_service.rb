@@ -18,6 +18,8 @@ module Lakebed
         end
       end
 
+      attr_reader :kernel
+      
       def register_services
         # override me!
       end

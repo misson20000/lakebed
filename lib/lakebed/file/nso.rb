@@ -57,7 +57,7 @@ module Lakebed
           if flags[i+3] then # check hash
             actual_hash = digest.digest(decompressed)
             if actual_hash != hashes[i] then
-              raise "hash mismatch on #{["text", "rodata", "data"][i]} segment (#{actual_hash.unpack("H*").first} != #{hashes[i].unpack("H*").first})"
+              puts "hash mismatch on #{["text", "rodata", "data"][i]} segment (#{actual_hash.unpack("H*").first} != #{hashes[i].unpack("H*").first})"
             end
           end
           if decompressed.bytesize != segheader[:decompressed_size] then

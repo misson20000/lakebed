@@ -338,16 +338,24 @@ module Lakebed
       session = @handle_table.get_strict(x0, HIPC::Session::Client)
       message = HIPC::Message.parse(self, @current_thread.tls.addr, 0x100)
 
-      suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest: " + session.describe_message(message))
-      session.send_message(message) do |rs|
-        suspension.release do
-          if rs then
-            rs.serialize(self, @current_thread.tls.addr, 0x100)
-            x0(0)
-          else
-            x0(0xf601)
+      suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest: " + session.describe_message(message) + " to " + session.session.server.to_s)
+      begin
+        session.send_message(message) do |rs|
+          suspension.release do
+            if rs then
+              rs.serialize(self, @current_thread.tls.addr, 0x100)
+              x0(0)
+            else
+              x0(0xf601)
+            end
           end
         end
+      rescue => e
+        Logger.log_for_thread(@current_thread, "encountered exception during svcSendSyncRequest:")
+        @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump do |i,h,p|
+          Logger.log_for_thread(@current_thread, "    #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
+        end
+        raise e
       end
     end
     
