@@ -1,68 +1,67 @@
 require "lakebed"
 
 RSpec.describe Lakebed do
-  it "reaches startup without crashing" do
-    e = Lakebed::Environment.new(
+  def environment
+    if @environment then
+      return @environment
+    end
+
+    @environment = Lakebed::Environment.new(
       Lakebed::TargetVersion.new([1,0,0], 450),
       [0, 9, 1],
       0x00)
-    k = Lakebed::Kernel.new(e)
-    k.strict_svcs = true
-    p = Lakebed::Process.new(k)
-    File.open("sm.kip") do |f|
-      p.add_nso(Lakebed::Files::Kip.from_file(f))
-    end
-    p.start
-    k.continue
   end
 
-  it "accepts connections to sm:" do
-    e = Lakebed::Environment.new(
-      Lakebed::TargetVersion.new([1,0,0], 450),
-      [0, 9, 1],
-      0x00)
-    k = Lakebed::Kernel.new(e)
-    k.strict_svcs = true
-    p = Lakebed::Process.new(k)
+  def kernel
+    if !@kernel then
+      @kernel = Lakebed::Kernel.new(environment)
+      @kernel.strict_svcs = true
+    end
+    @kernel
+  end
+
+  def load_sm
+    p = Lakebed::Process.new(kernel, :name => "sm")
     File.open("sm.kip") do |f|
       p.add_nso(Lakebed::Files::Kip.from_file(f))
     end
+    p
+  end
+  
+  it "reaches startup without crashing" do
+    p = load_sm
     p.start
-    k.continue
+    kernel.continue
+  end
 
-    connected = false
-    k.named_ports["sm:"].client.connect do |sess|
-      connected = true
+  def connect_to_sm(require_accept=true)
+    session = nil
+    kernel.continue
+    session = kernel.named_ports["sm:"].connect
+    if require_accept then
+      kernel.continue
+      expect(session.accepted).to be_truthy
     end
-    k.continue
+    Lakebed::CMIF::ClientSessionObject.new(session.client)
+  end
+  
+  it "accepts connections to sm:" do
+    p = load_sm
+    p.start
+    kernel.continue
 
-    expect(connected).to be true
+    connect_to_sm(true)
   end
 
   it "responds to ipc messages" do
-    e = Lakebed::Environment.new(
-      Lakebed::TargetVersion.new([1,0,0], 450),
-      [0, 9, 1],
-      0x00)
-    k = Lakebed::Kernel.new(e)
-    k.strict_svcs = true
-    p = Lakebed::Process.new(k)
-    File.open("sm.kip") do |f|
-      p.add_nso(Lakebed::Files::Kip.from_file(f))
-    end
+    p = load_sm
     p.start
-    k.continue
+    kernel.continue
 
-    session = nil
-    k.named_ports["sm:"].client.connect do |sess|
-      session = Lakebed::CMIF::ClientSessionObject.new(sess)
-    end
-    k.continue
-
-    expect(session).not_to be_nil
+    session = connect_to_sm(true)
 
     session.send_message_sync(
-      k,
+      kernel,
       Lakebed::CMIF::Message.build_rq(0) do
         pid 0
       end).unpack do
@@ -70,26 +69,11 @@ RSpec.describe Lakebed do
   end
 
   it "does not reply to GetService for a service that has not been registered" do
-    e = Lakebed::Environment.new(
-      Lakebed::TargetVersion.new([1,0,0], 450),
-      [0, 9, 1],
-      0x00)
-    k = Lakebed::Kernel.new(e)
-    k.strict_svcs = true
-    p = Lakebed::Process.new(k)
-    File.open("sm.kip") do |f|
-      p.add_nso(Lakebed::Files::Kip.from_file(f))
-    end
+    p = load_sm
     p.start
-    k.continue
+    kernel.continue
 
-    session = nil
-    k.named_ports["sm:"].client.connect do |sess|
-      session = Lakebed::CMIF::ClientSessionObject.new(sess)
-    end
-    k.continue
-
-    expect(session).not_to be_nil
+    session = connect_to_sm(true)
     
     session.send_message(
       Lakebed::CMIF::Message.build_rq(1) do
@@ -97,34 +81,20 @@ RSpec.describe Lakebed do
       end) do
       fail "should not reply..."
     end
-    k.continue
+    
+    kernel.continue
   end
 
   it "replies to GetService for sm:m" do
-    e = Lakebed::Environment.new(
-      Lakebed::TargetVersion.new([1,0,0], 450),
-      [0, 9, 1],
-      0x00)
-    k = Lakebed::Kernel.new(e)
-    k.strict_svcs = true
-    p = Lakebed::Process.new(k)
-    File.open("sm.kip") do |f|
-      p.add_nso(Lakebed::Files::Kip.from_file(f))
-    end
+    p = load_sm
     p.start
-    k.continue
+    kernel.continue
 
-    session = nil
-    k.named_ports["sm:"].client.connect do |sess|
-      session = Lakebed::CMIF::ClientSessionObject.new(sess)
-    end
-    k.continue
-
-    expect(session).not_to be_nil
+    session = connect_to_sm(true)
     
     expect(
       session.send_message_sync(
-        k,
+        kernel,
         Lakebed::CMIF::Message.build_rq(1) do
           u64("sm:m\x00\x00\x00\x00".unpack("Q<")[0])
         end))
