@@ -48,15 +48,17 @@ module Lakebed
       # add exception hook
       @mu.hook_add(
         UnicornEngine::UC_HOOK_INTR, Proc.new do |uc, value, ud|
+          iss = 0
+          
           begin
-            syndrome = @mu.query(UnicornEngine::UC_QUERY_EXCEPTION_SYNDROME)
-            ec = syndrome >> 26
-            iss = syndrome & ((1 << 24)-1)
-            
-            if ec == 0x15 then # SVC instruction taken from AArch64
+            pc = @mu.reg_read(UnicornEngine::UC_ARM64_REG_PC)-4
+            insn = @mu.mem_read(pc, 4).unpack("L<*")[0]
+
+            if insn & 0xf740001f == 0xd4000001 then
+              iss = (insn >> 5) & 0xffff
               svc(iss) # see svc.rb
             else
-              raise GuestExceptionError.new(self, "exception (ec: 0b#{ec.to_s(2)}, iss: 0x#{iss.to_s(16)})")
+              raise GuestExceptionError.new(self, "exception on non-svc instruction (#{value}, insn 0x#{insn.to_s(16)}, pc 0x#{pc.to_s(16)})")
             end
           rescue => e
             if !@kernel.strict_svcs && e.is_a?(ResultError) then
