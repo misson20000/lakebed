@@ -205,9 +205,14 @@ module Lakebed
     end
 
     def svc_create_thread
-      thread = LKThread.new(self, {:entry => x1, :sp => x3})
-      thread.gprs[0] = x2 # context
-      thread.priority = x4
+      entry = x1
+      context = x2.to_i
+      sp = x3
+      prio = x4
+      
+      thread = LKThread.new(self, {:entry => entry, :sp => sp})
+      thread.gprs[0] = context # context
+      thread.priority = prio
 
       # x5: processor id is ignored
 
@@ -221,6 +226,7 @@ module Lakebed
     def svc_start_thread
       thread = @handle_table.get_strict(x0, LKThread)
       thread.start do
+        Logger.log_for_thread(thread, "thread is being scheduled for the first time. x0: 0x" + x0.to_s(16))
         # thread context is already preloaded
       end
       x0(0)

@@ -41,7 +41,7 @@ module Lakebed
       
       @pc = params[:entry]
       @sp = params[:sp]
-      @gprs = params[:gprs]
+      @gprs = params[:gprs].clone
       @fprs = params[:fprs]
       @nzcv = 0
       @priority = params[:priority]
