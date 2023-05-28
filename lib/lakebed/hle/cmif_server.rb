@@ -25,17 +25,17 @@ module Lakebed
           end
         end
         
-        def add_port(port, &block)
+        def add_port(port, pointer_buffer_size=512, &block)
           port.wait do
-            add_session(Session.new(port.accept, yield, @hipc_manager))
+            add_session(Session.new(port.accept, yield, @hipc_manager, pointer_buffer_size))
             add_port(port, &block)
             process_deferrals
           end
         end
 
-        def create_session(object)
+        def create_session(object, pointer_buffer_size=512)
           session = HIPC::Session.new
-          add_session(Session.new(session.server, object, @hipc_manager))
+          add_session(Session.new(session.server, object, @hipc_manager, pointer_buffer_size))
           return session.client
         end
         
@@ -135,16 +135,17 @@ module Lakebed
       end
       
       class Session
-        def initialize(session, object, hipc_manager)
+        def initialize(session, object, hipc_manager, pointer_buffer_size=512)
           @ko = session
           @object = object
           @hipc_manager = hipc_manager
+          @pointer_buffer_size = pointer_buffer_size
 
           @ko.message_describer = self
         end
 
         def pointer_buffer_size
-          512
+          @pointer_buffer_size
         end
         
         def parse(server, rq)
@@ -217,6 +218,11 @@ module Lakebed
 
         def reset!
           @raw_data_head = 16
+          @xd_head = 0
+          @ad_head = 0
+          @bd_head = 0
+          @wd_head = 0
+          @cd_head = 0
         end
 
         attr_reader :rq
@@ -230,6 +236,17 @@ module Lakebed
           dat = @raw_data.byteslice(@raw_data_head, size)
           @raw_data_head+= size
           return dat
+        end
+
+        def pop_x_descriptor
+          if @xd_head >= @rq.x_descriptors.size then
+            raise "not enough x descriptors in request"
+          end
+          
+          descriptor = @rq.x_descriptors[@xd_head]
+          @xd_head+= 1
+
+          descriptor
         end
         
         def prepare_reply(code=0)
@@ -436,7 +453,7 @@ module Lakebed
         command(
           3, :QueryPointerBufferSize,
           Out::RawData.new(2, "S<")) do
-          puts "querying pointer buffer size"
+          puts "querying pointer buffer size: 0x" + session.pointer_buffer_size.to_s(16)
           next session.pointer_buffer_size
         end
 

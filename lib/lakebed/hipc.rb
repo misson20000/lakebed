@@ -229,6 +229,8 @@ module Lakebed
       def self.parse(process, buffer, size)
         StringIO.open(process.mu.mem_read(buffer, size)) do |msg|
           h1, h2 = msg.read(8).unpack("L<L<")
+
+          # read handle descriptor, if we have one
           if h2[31] == 1 then
             handle_descriptor = {}
             h = msg.read(4).unpack("L<")[0]
@@ -250,19 +252,53 @@ module Lakebed
             handle_descriptor = nil
           end
 
+          # read xabw descriptors
+          x_descriptors = h1[16..19].times.map do
+            x1, x2 = msg.read(8).unpack("L<L<")
+            
+            addr_high = x1[6..8]
+            addr_mid = x1[12..15]
+            addr_lo = x2
+            size = x1[16..31]
+            
+            ProcessBufferDescriptor.new(process, addr_lo + (addr_mid << 32) + (addr_high << 36), size)
+          end
+
+          a_descriptors = h1[20..23].times.map do
+            ProcessBufferDescriptor.parse_abw(process, msg)
+          end
+
+          b_descriptors = h1[24..27].times.map do
+            ProcessBufferDescriptor.parse_abw(process, msg)
+          end
+
+          w_descriptors = h1[28..31].times.map do
+            ProcessBufferDescriptor.parse_abw(process, msg)
+          end
+
           raw_data_misalignment = msg.pos & 0xf
           raw_data = msg.read(4 * (h2 & 0x3ff))
+
+          c_descriptor_mode = h2[10..13]
+
+          if c_descriptor_mode == 0 then
+            c_descriptors = []
+          elsif c_descriptor_mode == 2 then
+            raise "TODO: c descriptor mode 2"
+          else
+            raise "unsupported c descriptor mode: " + c_descriptor_mdoe.to_s
+          end
           
           Message.new(
             :type => h1 & 0xffff,
             :handle_descriptor => handle_descriptor,
-            :x_descriptors => [],
-            :a_descriptors => [],
-            :b_descriptors => [],
-            :w_descriptors => [],
+            :x_descriptors => x_descriptors,
+            :a_descriptors => a_descriptors,
+            :b_descriptors => b_descriptors,
+            :w_descriptors => w_descriptors,
             :raw_data_misalignment => raw_data_misalignment,
             :raw_data => raw_data,
-            :c_descriptors => []
+            :c_descriptors => c_descriptors,
           )
         end
       end
@@ -276,6 +312,78 @@ module Lakebed
       attr_reader :raw_data_misalignment
       attr_reader :raw_data
       attr_reader :c_descriptors
+
+      class ProcessBufferDescriptor
+        def initialize(process, addr, size)
+          @process = process
+          @addr = addr
+          @size = size
+        end
+
+        def self.parse_abw(process, msg)
+          size_lo, addr_lo, extra = msg.read(12).unpack("L<L<L<")
+
+          flags = extra[0..1]
+          addr_high = extra[2..4]
+          size_high = extra[24..27]
+          addr_mid = extra[28..31]
+
+          ProcessBufferDescriptor.new(process, addr_lo + (addr_mid << 32) + (addr_high << 36), size_lo + (size_high << 32))
+        end
+
+        attr_reader :size
+
+        def inspect
+          "ProcessBufferDescriptor<\"#{@process.name}\" pid #{@process.pid}, addr 0x#{@addr.to_s(16)}, size 0x#{@size.to_s(16)}>"
+        end
+        
+        def misalignment
+          @addr & 0xfff # TODO: how many low bits does kernel preserve?
+        end
+        
+        def read
+          @process.mu.mem_read(@addr, @size)
+        end
+
+        def write(data)
+          if data.bytesize != @size then
+            raise "attempt to writeback wrong amount of data"
+          end
+          @process.mu.mem_write(@addr, data)
+        end
+      end
+
+      class SyntheticBufferDescriptor
+        def initialize(data)
+          if data.is_a? String then
+            @data = data
+            @size = data.bytesize
+          elsif data.is_a? Integer then
+            @data = 0.chr * data
+            @size = data
+          else
+            raise "invalid argument"
+          end
+        end
+
+        attr_reader :data
+        attr_reader :size
+
+        def misalignment
+          0
+        end
+        
+        def read
+          @data
+        end
+
+        def write(data)
+          if data.bytesize != @size then
+            raise "attempt to writeback wrong amount of data"
+          end
+          @data = data
+        end
+      end
       
       class Transaction
         def initialize(rq, cb)
@@ -290,64 +398,7 @@ module Lakebed
         end
 
         attr_reader :rq
-        
-        class ProcessBufferDescriptor
-          def initialize(process, addr, size)
-            @process = process
-            @addr = addr
-            @size = size
-          end
-
-          attr_reader :size
-
-          def misalignment
-            @addr & 0xfff # TODO: how many low bits does kernel preserve?
-          end
-          
-          def read
-            @process.mu.mem_read(@addr, @size)
-          end
-
-          def write(data)
-            if data.bytesize != @size then
-              raise "attempt to writeback wrong amount of data"
-            end
-            @process.mu.mem_write(@addr, data)
-          end
-        end
-
-        class SyntheticBufferDescriptor
-          def initialize(data)
-            if data.is_a? String then
-              @data = data
-              @size = data.bytesize
-            elsif data.is_a? Integer then
-              @data = 0.chr * data
-              @size = data
-            else
-              raise "invalid argument"
-            end
-          end
-
-          attr_reader :data
-          attr_reader :size
-
-          def misalignment
-            0
-          end
-          
-          def read
-            @data
-          end
-
-          def write(data)
-            if data.bytesize != @size then
-              raise "attempt to writeback wrong amount of data"
-            end
-            @data = data
-          end
-        end
-        
+                
         def receive(recv_process, buffer, addr)
           if @received then
             raise "already received transaction"

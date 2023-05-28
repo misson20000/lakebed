@@ -24,7 +24,7 @@ module Lakebed
         # override me!
       end
       
-      def register(name, max_sessions=32, &block)
+      def register(name, max_sessions=32, pointer_buffer_size=512, &block)
         port = @sm.send_message_sync(
           @kernel,
           Lakebed::CMIF::Message.build_rq(2) do
@@ -35,7 +35,7 @@ module Lakebed
           move_handle(:port, Lakebed::HIPC::Port::Server)
         end[:port]
 
-        @server.add_port(port, &block)
+        @server.add_port(port, pointer_buffer_size, &block)
       end
     end
   end
