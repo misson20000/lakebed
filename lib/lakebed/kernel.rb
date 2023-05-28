@@ -14,6 +14,10 @@ module Lakebed
     
     def add_thread(thread)
       @threads.push(thread)
+      
+      @threads.sort! do |a, b|
+        a.priority <=> b.priority
+      end
     end
 
     def has_next?
