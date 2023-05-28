@@ -61,6 +61,8 @@ module Lakebed
         svc_get_resource_limit_limit_value
       when 0x31
         svc_get_resource_limit_current_value
+      when 0x40
+        svc_create_session
       when 0x41
         svc_accept_session
       when 0x43
@@ -611,6 +613,17 @@ module Lakebed
       x0(0)
     end
 
+    def svc_create_session
+      is_light = x2
+      name = x3
+
+      session = HIPC::Session.new()
+
+      x0(0)
+      x1(@handle_table.insert(session.server))
+      x2(@handle_table.insert(session.client))
+    end
+    
     def svc_reply_and_receive
       handles = @mu.mem_read(x1, x2 * 4).unpack("L<*")
       timeout = x4
