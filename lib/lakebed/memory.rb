@@ -77,7 +77,12 @@ module Lakebed
       end
 
       attr_reader :backing
+      attr_reader :label
 
+      def inspect
+        "MemoryResource(size 0x#{@backing.bytesize}, \"#{@label}\")"
+      end
+      
       def principal_slice
         Slice.new(self, 0, @backing.bytesize)
       end
