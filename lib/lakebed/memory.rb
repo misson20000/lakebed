@@ -572,5 +572,10 @@ module Lakebed
         end
       end
     end
+
+    class TransferMemory
+      def close
+      end
+    end
   end
 end

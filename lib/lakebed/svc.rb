@@ -29,6 +29,8 @@ module Lakebed
         svc_signal_event
       when 0x13
         svc_map_shared_memory
+      when 0x15
+        svc_create_transfer_memory
       when 0x16
         svc_close_handle
       when 0x18
@@ -266,6 +268,15 @@ module Lakebed
       @as_mgr.map_slice!(addr, resource.principal_slice, MemoryType::SharedMemory, perm, {})
 
       x0(0)
+    end
+
+    def svc_create_transfer_memory
+      addr = x1
+      size = x2
+      perm = x3
+
+      x0(0)
+      x1(@handle_table.insert(Memory::TransferMemory.new))
     end
     
     def svc_close_handle
