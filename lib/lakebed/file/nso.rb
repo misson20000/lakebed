@@ -110,7 +110,8 @@ module Lakebed
             raise "unexpected EOF in ips file"
           else
             if offset_length == 3 then
-              offset = offset_bytes[0] < 16 + offset_bytes[1] << 8 + offset_bytes[2] << 0
+              offset_bytes = offset_bytes.unpack("CCC")
+              offset = (offset_bytes[0] << 16) + (offset_bytes[1] << 8) + (offset_bytes[2] << 0)
             else
               offset = offset_bytes.unpack("L>")[0]
             end
@@ -125,7 +126,7 @@ module Lakebed
             data = ips.read(length)
           end
 
-          self.write(offset - 0x40, data)
+          self.write(offset - 0x100, data)
         end
       end
       
