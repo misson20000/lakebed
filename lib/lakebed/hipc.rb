@@ -146,7 +146,7 @@ module Lakebed
           if @session.closed? then
             block.call(nil)
           else
-            begin_transaction(Message::Transaction.new(msg, block))
+            begin_transaction(Transaction.new(msg, block))
           end
         end
         
@@ -190,12 +190,12 @@ module Lakebed
           end
         end
         
-        def receive_message(process, buffer, addr)
+        def receive_message_into(process, buffer, addr, buffer_receiver)
           if @current_transaction != nil then
             raise "attempted to receive a message before replying"
           end
           @current_transaction = @session.pending_requests.pop
-          @current_transaction.receive(process, buffer, addr)
+          @current_transaction.receive_into(process, buffer, addr, buffer_receiver)
         end
 
         def reply_message(process, message)
@@ -223,6 +223,7 @@ module Lakebed
         @w_descriptors = fields[:w_descriptors]
         @raw_data_misalignment = fields[:raw_data_misalignment]
         @raw_data = fields[:raw_data]
+        @c_descriptor_mode = fields[:c_descriptor_mode]
         @c_descriptors = fields[:c_descriptors]
       end
 
@@ -261,7 +262,7 @@ module Lakebed
             addr_lo = x2
             size = x1[16..31]
             
-            ProcessBufferDescriptor.new(process, addr_lo + (addr_mid << 32) + (addr_high << 36), size)
+            ProcessBufferDescriptor.new(process, addr_lo | (addr_mid << 32) | (addr_high << 36), size)
           end
 
           a_descriptors = h1[20..23].times.map do
@@ -280,13 +281,31 @@ module Lakebed
           raw_data = msg.read(4 * (h2 & 0x3ff))
 
           c_descriptor_mode = h2[10..13]
+          c_descriptor_count = 0
 
           if c_descriptor_mode == 0 then
-            c_descriptors = []
+            c_descriptor_count = 0
+          elsif c_descriptor_mode == 1 then
+            c_descriptor_count = 0
           elsif c_descriptor_mode == 2 then
-            raise "TODO: c descriptor mode 2"
+            c_descriptor_count = 1
           else
-            raise "unsupported c descriptor mode: " + c_descriptor_mdoe.to_s
+            c_descriptor_count = c_descriptor_mode - 2
+          end
+
+          if c_descriptor_mode == 1 then
+            # inline c descriptor
+            inline_c_offset = (msg.pos + 0xf & ~0xf)
+            inline_c_size = size - inline_c_offset
+            c_descriptors = [ProcessBufferDescriptor.new(process, buffer + inline_c_offset, inline_c_size)]
+          else
+            c_descriptors = c_descriptor_count.times.map do
+              addr_lo, c2 = msg.read(8).unpack("L<L<")
+              addr_hi = c2[0..15]
+              size = c2[16..31]
+
+              ProcessBufferDescriptor.new(process, addr_lo + (addr_hi << 32), size)
+            end
           end
           
           Message.new(
@@ -298,6 +317,7 @@ module Lakebed
             :w_descriptors => w_descriptors,
             :raw_data_misalignment => raw_data_misalignment,
             :raw_data => raw_data,
+            :c_descriptor_mode => c_descriptor_mode,
             :c_descriptors => c_descriptors,
           )
         end
@@ -311,6 +331,7 @@ module Lakebed
       attr_reader :w_descriptors
       attr_reader :raw_data_misalignment
       attr_reader :raw_data
+      attr_reader :c_descriptor_mode
       attr_reader :c_descriptors
 
       class ProcessBufferDescriptor
@@ -331,6 +352,8 @@ module Lakebed
           ProcessBufferDescriptor.new(process, addr_lo + (addr_mid << 32) + (addr_high << 36), size_lo + (size_high << 32))
         end
 
+        attr_reader :process
+        attr_reader :addr
         attr_reader :size
 
         def inspect
@@ -347,7 +370,7 @@ module Lakebed
 
         def write(data)
           if data.bytesize != @size then
-            raise "attempt to writeback wrong amount of data"
+            raise "attempt to writeback wrong amount of data (expected 0x#{@size.to_s(16)} bytes)"
           end
           @process.mu.mem_write(@addr, data)
         end
@@ -384,65 +407,44 @@ module Lakebed
           @data = data
         end
       end
-      
-      class Transaction
-        def initialize(rq, cb)
-          @received = false
-          @replied = false
-          @rq = rq
-          @recv_process = nil
-          @reply_process = nil
-          @cb = cb
 
-          # TODO: grab ReceiveList
+      def strip_buffer_receiver!
+        if @c_descriptor_mode == 0 then
+          r = NullBufferReceiver.new
+        elsif @c_descriptor_mode == 1 || @c_descriptor_mode == 2 then
+          r = SingleBufferReceiver.new(@c_descriptors[0])
+        else
+          r = MultiBufferReceiver.new(@c_descriptors)
         end
 
-        attr_reader :rq
-                
-        def receive(recv_process, buffer, addr)
-          if @received then
-            raise "already received transaction"
-          end
-          @received = true
-          @recv_process = recv_process
-          @rq.serialize(recv_process, buffer, addr)
-          # TODO: read out buffers into server process
-        end
-        
-        def reply(reply_process, rs)
-          # NOTE: receive_message_for_hle does not set recv_process
-          # because HLE modules don't have processes.
-          if @replied then
-            raise "alread replied to transaction"
-          end
-          @replied = true
-          @reply_process = reply_process
-          
-          # TODO: writeback to request buffer descriptors from reply_process
-          # TODO: unmap MapAlias buffers from recv_process
-          @cb.call(rs)
-        end
+        @c_descriptor_mode = 0
+        @c_descriptors = []
 
-        def close
-          @cb.call(nil)
-        end
+        r
       end
       
       # serialize message back into process
-      def serialize(proc, addr, size)
+      def serialize(proc, addr, size, buffer_receiver)
         h1 = @type & 0xffff
-        # TODO: x descriptors
+        h1|= @x_descriptors.size << 16
+        
         # TODO: a descriptors
         # TODO: b descriptors
         # TODO: w descriptors
+        
         if @raw_data.size & 0x3 != 0 then
           raise "invalid raw data size: #{@raw_data.size}"
         end
+        
         h2 = (@raw_data.size / 4) & 0x3ff
-        # TODO: c descriptors
+        if !@c_descriptors.empty? then
+          raise "attempted to serialize a message into a process that didn't have it's buffer receiver stripped"
+        end
+        # don't serialize c descriptors into processes
         h2|= @handle_descriptor == nil ? 0 : 1 << 31
 
         message = [h1, h2].pack("L<L<")
+        
         if @handle_descriptor then
           h = 0
           h|= 1 if @handle_descriptor[:pid] != nil
@@ -467,20 +469,101 @@ module Lakebed
           message+= (copy_handles + move_handles).pack("L<*")
         end
 
-        # TODO: buffer descriptors
+        @x_descriptors.each do |xd|
+          index = xd[:index]
+          addr, size = buffer_receiver.receive(index, xd[:descriptor].read)
+          
+          x1 = (index[0..5] << 0) | (addr[36..38] << 6) | (index[9..1] << 9) | (addr[32..35] << 12) | (size[0..15] << 16)
+          x2 = addr[0..31]
+
+          message+= [x1, x2].pack("L<L<")
+        end
+        
+        # TODO: other buffer descriptors
 
         if @raw_data_misalignment != message.bytesize & 0xf then
-          raise "incorrect raw data misalignment"
+          raise "incorrect raw data misalignment (got #{@raw_data_misalignment}, expected #{message.bytesize & 0xf})"
         end
         message+= @raw_data
 
-        # TODO: c descriptors
+        # no need to do C descriptors
 
         if message.bytesize > size then
           raise "serialized message too long"
         end
         
         proc.mu.mem_write(addr, message)
+      end
+    end
+
+    class Transaction
+      def initialize(rq, cb)
+        @received = false
+        @replied = false
+        @rq = rq
+        @recv_process = nil
+        @reply_process = nil
+        @cb = cb
+      end
+
+      attr_reader :rq
+      
+      def receive_into(recv_process, buffer, addr, buffer_receiver)
+        if @received then
+          raise "already received transaction"
+        end
+        @received = true
+        @recv_process = recv_process
+        @rq.serialize(recv_process, buffer, addr, buffer_receiver)
+        
+        # TODO: map MapAlias buffers into server process
+      end
+      
+      def reply(reply_process, rs)
+        # NOTE: receive_message_for_hle does not set recv_process
+        # because HLE modules don't have processes.
+        if @replied then
+          raise "alread replied to transaction"
+        end
+        @replied = true
+        @reply_process = reply_process
+        
+        # TODO: writeback to request buffer descriptors from reply_process
+        # TODO: unmap MapAlias buffers from recv_process
+        @cb.call(rs)
+      end
+
+      def close
+        @cb.call(nil)
+      end
+    end
+
+    class NullBufferReceiver
+      def receive(index, data)
+        raise "attempted to use an X descriptor to send data to a process that didn't have a buffer receiver"
+      end
+    end
+
+    class SingleBufferReceiver
+      def initialize(descriptor)
+        @descriptor = descriptor
+      end
+
+      def receive(index, data)
+        raise "TODO"
+      end
+    end
+
+    class MultiBufferReceiver
+      def initialize(descriptors)
+        @descriptors = descriptors
+      end
+
+      def receive(index, data)
+        desc = @descriptors[index]
+        desc.write(data)
+
+        return desc.addr, data.bytesize
       end
     end
   end

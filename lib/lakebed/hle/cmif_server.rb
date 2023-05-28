@@ -223,6 +223,8 @@ module Lakebed
           @bd_head = 0
           @wd_head = 0
           @cd_head = 0
+          @index = 0
+          @move_handles = 0
         end
 
         attr_reader :rq
@@ -238,6 +240,18 @@ module Lakebed
           return dat
         end
 
+        def pop_move_handle
+          mh = @rq.handle_descriptor[:move_handles][@move_handles]
+          @move_handles+= 1
+          mh
+        end
+
+        def pop_copy_handle
+          ch = @rq.handle_descriptor[:copy_handles][@copy_handles]
+          @copy_handles+= 1
+          ch
+        end
+
         def pop_x_descriptor
           if @xd_head >= @rq.x_descriptors.size then
             raise "not enough x descriptors in request"
@@ -247,6 +261,34 @@ module Lakebed
           @xd_head+= 1
 
           descriptor
+        end
+        
+        def pop_a_descriptor
+          if @ad_head >= @rq.a_descriptors.size then
+            raise "not enough a descriptors in request"
+          end
+          
+          descriptor = @rq.a_descriptors[@ad_head]
+          @ad_head+= 1
+
+          descriptor
+        end
+        
+        def pop_b_descriptor
+          if @bd_head >= @rq.b_descriptors.size then
+            raise "not enough b descriptors in request"
+          end
+          
+          descriptor = @rq.b_descriptors[@bd_head]
+          @bd_head+= 1
+
+          descriptor
+        end
+
+        def next_indexed_buffer
+          index = @index
+          @index+= 1
+          index
         end
         
         def prepare_reply(code=0)
@@ -264,6 +306,7 @@ module Lakebed
           @copy_handles = []
           @move_handles = []
           @out_objects = []
+          @send_buffers = []
         end
 
         def to_cmif
@@ -274,7 +317,7 @@ module Lakebed
             @copy_handles,
             @move_handles,
             raw_data,
-            [])
+            @send_buffers)
         end
         
         def raw_data
@@ -313,6 +356,10 @@ module Lakebed
           else
             @move_handles.push(@server.create_session(o))
           end
+        end
+
+        def append_send_buffer(instance)
+          @send_buffers.push(instance)
         end
       end
 
@@ -382,7 +429,11 @@ module Lakebed
             re_ctx = de_ctx.prepare_reply
             @serialization.each do |s|
               if s.provides_output? then
-                s.pack(re_ctx, rets.shift)
+                if s.consumes_return? then
+                  s.pack(re_ctx, rets.shift)
+                else
+                  s.pack(re_ctx)
+                end
               end
             end
             

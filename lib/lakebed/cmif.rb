@@ -72,6 +72,7 @@ module Lakebed
         @fields = {}
 
         @move_handle_index = 0
+        @raw_data_head = 0x10
         
         if msg.raw_data.byteslice(@raw_data_offset, 4) != "SFCO" then
           raise "invalid response magic"
@@ -100,6 +101,11 @@ module Lakebed
         end
         mh
       end
+
+      def u32(tag)
+        @fields[tag] = @msg.raw_data.byteslice(@raw_data_offset + @raw_data_head, 4).unpack("L<")[0]
+        @raw_data_head+= 4
+      end
       
       def unpack(&block)
         if(@result_code != 0) then
@@ -111,13 +117,13 @@ module Lakebed
     end
     
     class Message
-      def initialize(type, pid, copy_handles, move_handles, data, buffers)
+      def initialize(type, pid, copy_handles, move_handles, data, pointer_buffers)
         @type = type
         @pid = pid
         @copy_handles = copy_handles
         @move_handles = move_handles
         @data = data
-        @buffers = buffers
+        @pointer_buffers = pointer_buffers
       end
 
       def has_handle_descriptor?
@@ -130,7 +136,7 @@ module Lakebed
       attr_reader :copy_handles
       attr_reader :move_handles
       attr_reader :data
-      attr_reader :buffers
+      attr_reader :pointer_buffers
 
       def to_hipc
         # Thankfully we don't care about bitfuckery here. Just predict
@@ -151,7 +157,8 @@ module Lakebed
         size+= @copy_handles.size
         size+= @move_handles.size
 
-        # TODO: buffer descriptors
+        # x descriptors
+        size+= 2 * @pointer_buffers.size
 
         raw_data_misalignment = (size * 4) & 0xf
         pad_before = ((size + 3) & ~3) - size
@@ -160,7 +167,7 @@ module Lakebed
         
         pad_after = 4 - pad_before
         raw_data+= 0.chr * 4 * pad_after
-        # TODO: type A lengths
+        # TODO: type 0xa lengths
 
         return HIPC::Message.new(
                  :type => @type,
@@ -170,7 +177,9 @@ module Lakebed
                     :copy_handles => @copy_handles,
                     :move_handles => @move_handles} :
                    nil,
-                 :x_descriptors => [],
+                 :x_descriptors => @pointer_buffers.map do |sb|
+                   {:index => sb.index, :descriptor => HIPC::Message::SyntheticBufferDescriptor.new(sb.value)}
+                 end,
                  :a_descriptors => [],
                  :b_descriptors => [],
                  :w_descriptors => [],
@@ -188,12 +197,12 @@ module Lakebed
           @copy_handles = []
           @move_handles = []
           @data = String.new
-          @buffers = []
+          @pointer_buffers = []
         end
 
         def to_message
           align(4)
-          Message.new(@type, @pid, @copy_handles, @move_handles, [@magic, @cmdid].pack("a4x4L<x4") + @data, @buffers)
+          Message.new(@type, @pid, @copy_handles, @move_handles, [@magic, @cmdid].pack("a4x4L<x4") + @data, @pointer_buffers)
         end
 
         def type(type)

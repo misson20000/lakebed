@@ -10,6 +10,10 @@ module Lakebed
           false
         end
 
+        def consumes_return?
+          false
+        end
+        
         attr_reader :name
         
         class RawData < In
@@ -26,6 +30,22 @@ module Lakebed
               return str.unpack(@packing)[0]
             else
               return str
+            end
+          end
+        end
+
+        class Handle < In
+          def initialize(mode)
+            @mode = mode
+          end
+
+          def unpack(ctx)
+            if @mode == :move then
+              ctx.pop_move_handle
+            elsif @mode == :copy then
+              ctx.pop_copy_handle
+            else
+              raise "unknown handle mode: #{@mode}"
             end
           end
         end
@@ -47,14 +67,14 @@ module Lakebed
           @name = name
           @fixed_size = fixed_size
           
-          @in = type[0]
-          @out = type[1]
-          @hipc_map_alias = type[2]
-          @hipc_pointer = type[3]
-          @fixed_size = type[4]
-          @hipc_auto_select = type[5]
-          @hipc_map_transfer_allows_non_secure = type[6]
-          @hipc_map_transfer_allows_non_device = type[7]
+          @in = type[0] == 1
+          @out = type[1] == 1
+          @hipc_map_alias = type[2] == 1
+          @hipc_pointer = type[3] == 1
+          @fixed_size = type[4] == 1
+          @hipc_auto_select = type[5] == 1
+          @hipc_map_transfer_allows_non_secure = type[6] == 1
+          @hipc_map_transfer_allows_non_device = type[7] == 1
         end
 
         attr_reader :name
@@ -64,32 +84,94 @@ module Lakebed
         end
 
         def provides_output?
-          false
+          true
+        end
+
+        def consumes_return?
+          @out
         end
 
         def unpack(ctx)
-          if @type == 0x19 then
-            descriptor = ctx.pop_x_descriptor
-
-            Instance.new(self, descriptor)
+          if @in && !@out then
+            if @hipc_map_alias && !@hipc_pointer && !@hipc_auto_select then
+              InputInstance.new(self, ctx.pop_a_descriptor)
+            elsif !@hipc_map_alias && @hipc_pointer && !@hipc_auto_select then
+              InputInstance.new(self, ctx.pop_x_descriptor)
+            else
+              raise "unsupported buffer type: 0x" + @type.to_s(16)
+            end
+          elsif @out && !@in then
+            if @hipc_map_alias && !@hipc_pointer && !@hipc_auto_select then
+              MapAliasOutputInstance.new(self, ctx.pop_b_descriptor)
+            elsif !@hipc_map_alias && @hipc_pointer && !@hipc_auto_select then
+              SendOutputInstance.new(self, ctx.next_indexed_buffer)
+            else
+              raise "unsupported buffer type: 0x" + @type.to_s(16)
+            end
           else
-            raise "unsupported buffer type"
+            raise "unsupported in/out combination, type: 0x" + @type.to_s(16)
           end
         end
 
-        class Instance
+        def pack(ctx, value=nil)
+          if !@out then
+            return
+          end
+
+          if !@hipc_map_alias && @hipc_pointer && !@hipc_auto_select then
+            if !value.is_a? SendOutputInstance then
+              raise "expected command to return a SendOutputInstance"
+            end
+
+            ctx.append_send_buffer(value)
+          end
+        end
+        
+        class InputInstance
           def initialize(buffer_spec, descriptor)
             @buffer_spec = buffer_spec
             @descriptor = descriptor
           end
 
           def inspect
-            "Buffer::Instance<" + @descriptor.inspect + ">"
+            "Buffer::InputInstance<" + @descriptor.inspect + ">"
           end
           
           def content
             @descriptor.read
           end
+
+          attr_reader :descriptor
+        end
+
+        class MapAliasOutputInstance
+          def initialize(buffer_spec, descriptor)
+            @buffer_spec = buffer_spec
+            @descriptor = descriptor
+          end
+
+          def inspect
+            "Buffer::MapAliasOutputInstance<" + @descriptor.inspect + ">"
+          end
+          
+          def write(data)
+            @descriptor.write(data)
+          end
+        end
+
+        class SendOutputInstance
+          def initialize(buffer_spec, index)
+            @buffer_spec = buffer_spec
+            @index = index
+            @value = nil
+          end
+
+          def write(data)
+            @value = data
+          end
+
+          attr_reader :index
+          attr_reader :value
         end
       end
       
@@ -102,6 +184,10 @@ module Lakebed
           true
         end
 
+        def consumes_return?
+          true
+        end
+        
         attr_reader :name
         
         class RawData < Out

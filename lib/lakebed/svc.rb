@@ -353,13 +353,14 @@ module Lakebed
     def svc_send_sync_request
       session = @handle_table.get_strict(x0, HIPC::Session::Client)
       message = HIPC::Message.parse(self, @current_thread.tls.addr, 0x100)
+      buffer_receiver = message.strip_buffer_receiver!
 
       suspension = LKThread::Suspension.new(@current_thread, "svcSendSyncRequest: " + session.describe_message(message) + " to " + session.session.server.to_s)
       begin
         session.send_message(message) do |rs|
           suspension.release do
             if rs then
-              rs.serialize(self, @current_thread.tls.addr, 0x100)
+              rs.serialize(self, @current_thread.tls.addr, 0x100, buffer_receiver)
               x0(0)
             else
               x0(0xf601)
@@ -602,14 +603,17 @@ module Lakebed
 
       Logger.log_for_thread(@current_thread, "svcReplyAndReceive", :timeout => timeout, :reply_to_handle => reply_to_handle)
       
+      Logger.log_for_thread(@current_thread, "  replying: (handle (w3): 0x#{reply_to_handle.to_s(16)})")
+      @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump do |i,h,p|
+        Logger.log_for_thread(@current_thread, "    #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
+      end
+
+      reply_message = HIPC::Message.parse(self, @current_thread.tls.addr, 0x100)
+      buffer_receiver = reply_message.strip_buffer_receiver!
+      
       if reply_to_handle != 0 then
-        Logger.log_for_thread(@current_thread, "  replying: (handle (w3): 0x#{reply_to_handle.to_s(16)})")
-        @mu.mem_read(@current_thread.tls.addr, 0x40).hexdump do |i,h,p|
-          Logger.log_for_thread(@current_thread, "    #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
-        end
-        
         reply_session = @handle_table.get_strict(reply_to_handle, HIPC::Session::Server)
-        reply_session.reply_message(self, HIPC::Message.parse(self, @current_thread.tls.addr, 0x100))
+        reply_session.reply_message(self, reply_message)
       end
       
       objects = handles.map do |h|
@@ -623,7 +627,7 @@ module Lakebed
           if obj.closed? then
             x0(0xf601)
           else
-            obj.receive_message(self, thread.tls.addr, 0x100)
+            obj.receive_message_into(self, thread.tls.addr, 0x100, buffer_receiver)
             Logger.log_for_thread(thread, "receiving:")
             @mu.mem_read(thread.tls.addr, 0x40).hexdump do |i,h,p|
               Logger.log_for_thread(thread, "  #{i.to_s(16).rjust(8, "0")}  #{h.join(" ")}  |#{p.join}|")
