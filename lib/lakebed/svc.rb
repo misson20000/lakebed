@@ -35,6 +35,10 @@ module Lakebed
         svc_wait_synchronization
       when 0x19
         svc_cancel_synchronization
+      when 0x1a
+        svc_arbitrate_lock
+      when 0x1b
+        svc_arbitrate_unlock
       when 0x1c
         svc_wait_process_wide_key_atomic
       when 0x1d
@@ -299,38 +303,39 @@ module Lakebed
       x0(0)
     end
 
-    def svc_wait_process_wide_key_atomic
-      mutex = x0
-      condvar = x1
-      handle = x2
-      timeout = x3
+    def svc_arbitrate_lock
+      thread_handle = x0
+      addr = x1
+      tag = x2
 
-      mutex_release(mutex)
-      suspension = LKThread::Suspension.new(@current_thread, "svcWaitProcessWideKeyAtomic(0x#{condvar.to_s(16)})")
-      @condvar_suspensions.push(CondvarSuspension.new(condvar, mutex, handle, suspension))
+      wait_for_address(thread_handle, addr, tag)
+
+      x0(0)
+    end
+
+    def svc_arbitrate_unlock
+      addr = x0
+
+      signal_to_address(addr)
+
+      x0(0)
+    end
+    
+    def svc_wait_process_wide_key_atomic
+      address = x0
+      cv_key = x1
+      tag = x2
+      timeout_ns = x3
+
+      wait_condition_variable(address, cv_key, tag, timeout_ns)
     end
     
     def svc_signal_process_wide_key
-      condvar = x0
-      num_threads_to_wake = x1
+      cv_key = x0
+      count = x1
 
-      Logger.log_for_thread(@current_thread, "svcSignalProcessWideKey(0x#{condvar.to_s(16)})")
+      signal_condition_variable(cv_key, count)
       
-      suspensions = @condvar_suspensions.select do |s|
-        s.condvar == condvar
-      end
-
-      if num_threads_to_wake != -1 then
-        suspensions = suspensions[0, num_threads_to_wake]
-      end
-
-      suspensions.each do |s|
-        s.suspension.release do
-          mutex_lock_for_thread(s.mutex, s.suspension.thread, s.handle, nil)
-          x0(0)
-        end
-      end
-
       x0(0)
     end
     
@@ -766,44 +771,149 @@ module Lakebed
       end
     end
 
-    CondvarSuspension = Struct.new(:condvar, :mutex, :handle, :suspension)
-    MutexSuspension = Struct.new(:mutex, :handle, :suspension)
-    MutexHasWaitersFlag = 0x40000000
-    
-    def mutex_lock_for_thread(mutex, thread, requesting_handle, holding_handle)
-      value = @mu.mem_read(mutex, 4).unpack("L<")[0]
+    CondvarSuspension = Struct.new(:addr, :key, :tag, :suspension)
+    MutexSuspension = Struct.new(:addr, :tag, :suspension)
+    HandleWaitMask = 0x40000000
 
-      # if mutex is not held...
-      if (holding_handle == nil && value == 0) || (holding_handle != nil && value != (holding_handle | MutexHasWaitersFlag)) then
-        value = requesting_handle
-        @mu.mem_write(mutex, [value].pack("L<")[0])
-        return
+    def wait_condition_variable(addr, key, value, timeout)
+      suspensions = @mutex_suspensions.select do |s|
+        s.addr == addr
+      end
+      
+      next_owner = suspensions.pop
+      has_waiters = !suspensions.empty?
+      next_owner_value = 0
+      
+      if next_owner != nil then
+        next_owner_value = next_owner.tag
+
+        if has_waiters then
+          next_owner_value|= HandleWaitMask
+        end
+
+        @mutex_suspensions.delete(next_owner)
+        
+        next_owner.suspension.release do
+          x0(0)
+        end
       end
 
-      suspension = LKThread::Suspension.new(thread, "lock mutex(0x#{mutex.to_s(16)})")
-      @mutex_suspensions.push(MutexSuspension.new(mutex, requesting_handle, suspension))
+      @mu.mem_write(key, [1].pack("L<"))
+      @mu.mem_write(addr, [next_owner_value].pack("L<"))
+      
+      if timeout == 0 then
+        x0(0xea01) # timed out
+        return
+      end
+      
+      suspension = LKThread::Suspension.new(@current_thread, "svcWaitProcessWideKeyAtomic(addr 0x#{addr.to_s(16)}, key 0x#{key.to_s(16)}, value 0x#{value.to_s(16)}, timeout #{timeout})")
+      @condvar_suspensions.push(CondvarSuspension.new(addr, key, value, suspension))
     end
 
-    def mutex_release(mutex)
-      suspensions = @mutex_suspensions.select do |s|
-        s.mutex == mutex
+    def signal_condition_variable(key, count)
+      #Logger.log_for_thread(@current_thread, "svcSignalProcessWideKey(0x#{key.to_s(16)})")
+      
+      suspensions = []
+      has_waiters = false
+
+      # figure out which suspensions to release
+      @condvar_suspensions.delete_if do |cvs|
+        if cvs.key == key then
+          if suspensions.size < count then
+            suspensions.push(cvs)
+            true
+          else
+            has_waiters = true
+          end
+        end
+        
+        false
       end
 
-      if suspensions.empty? then
-        @mu.mem_write(mutex, [0].pack("L<"))
+      # try to lock the mutex on behalf of each thread we're waking, sending them off to the mutex arbitrator
+      suspensions.each do |s|
+        prev_tag = update_lock_atomic(s.addr, s.value, HandleWaitMask)
+
+        if prev_tag == 0 then
+          s.suspension.release do
+            x0(0)
+          end
+        else
+          @mutex_suspensions.push(MutexSuspension.new(s.addr, s.value, s.suspension))
+        end
+      end
+      
+      if !has_waiters then
+        @mu.mem_write(key, [0].pack("L<"))
+      end
+    end
+
+    def update_lock_atomic(address, if_zero, new_orr_mask)
+      value = @mu.mem_read(address, 4).unpack("L<")
+
+      if value == 0 then
+        new_value = if_zero
+      else
+        new_value = value | new_orr_mask
+      end
+
+      @mu.mem_write(address, [new_value].pack("L<"))
+
+      value
+    end
+    
+    def wait_for_address(handle, addr, tag)
+      test_tag = @mu.mem_read(addr, 4).unpack("L<")[0]
+
+      # if mutex is not held by the thread userspace thinks it is...
+      if test_tag != (handle | HandleWaitMask) then
         return
       end
 
-      s = suspensions.pop
+      thread = @handle_table.get_strict(handle, LKThread)
 
-      value = s.handle
-      if !suspensions.empty? then
-        value|= MutexHasWaitersFlag
+      # suspend the current thread
+      suspension = LKThread::Suspension.new(@current_thread, "lock mutex(0x#{addr.to_s(16)})")
+      @mutex_suspensions.push(MutexSuspension.new(addr, tag, suspension))
+    end
+
+    def signal_to_address(address)
+      next_owner = nil
+      has_waiters = false
+
+      # figure out the next owner
+      @mutex_suspensions.delete_if do |mxs|
+        if mxs.addr == address then
+          if next_owner == nil then
+            next_owner = mxs
+            true
+          else
+            has_waiters = true
+            false
+          end
+        else
+          false
+        end
       end
 
-      @mu.mem_write(mutex, [value].pack("L<"))
-      s.release do
-        x0(0)
+      # figure out what to write to the mutex
+      next_value = 0
+      if next_owner != nil then
+        next_value = next_owner.tag
+
+        if has_waiters
+          next_value|= HandleWaitMask
+        end
+      end
+
+      # write it to the mutex
+      @mu.mem_write(address, [next_value].pack("L<"))
+
+      # if we decided on another owner, wake it up
+      if next_owner != nil then
+        next_owner.suspension.release do
+          x0(0)
+        end
       end
     end
   end

@@ -211,6 +211,7 @@ module Lakebed
     attr_reader :mu
     attr_reader :as_mgr
     attr_reader :handle_table
+    attr_reader :threads
     attr_reader :current_thread
 
     def to_s
