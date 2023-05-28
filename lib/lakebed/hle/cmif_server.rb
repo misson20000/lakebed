@@ -321,6 +321,10 @@ module Lakebed
       
       class Object
         def parse(server, session, de_ctx)
+          if !self.class.commands || !self.class.commands[de_ctx.command_id] then
+            raise "unimplemented command #{de_ctx.command_id} on #{self.class.name}"
+          end
+          
           cmd = self.class.commands[de_ctx.command_id]
           CommandRequest.new(server, session, self, de_ctx, cmd)
         end
