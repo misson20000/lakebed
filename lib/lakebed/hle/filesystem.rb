@@ -44,8 +44,22 @@ module Lakebed
         end
 
         command(
+          202, :OpenDataStorageByDataId,
+          CMIF::In::RawData.new(1, "C", 1, "storage_id"),
+          CMIF::In::RawData.new(8, "Q<", 8, "tid"),
+          CMIF::Out::Object.new) do |storage, tid|
+          puts "opening data storage for title id 0x" + tid.to_s(16)
+
+          case tid
+          when 0x0100000000000800
+            IStorage.new(File.open("certstore.romfs", "rb"))
+          else
+            raise "unknown data storage tid: 0x" + tid.to_s(16)
+          end
+        end
+        
+        command(
           1003, :DisableAutoSaveDataCreation) do
-          
         end
       end
 
@@ -59,6 +73,14 @@ module Lakebed
           1
         end
 
+        def resize(new_size)
+          if new_size > size then
+            @content+= 0.chr * (size - new_size)
+          else
+            @content = @content.byteslice(0, new_size)
+          end
+        end
+        
         def size
           @content.bytesize
         end
@@ -153,11 +175,32 @@ module Lakebed
         command(
           2, :Flush) do
         end
+
+        command(
+          3, :SetSize,
+          CMIF::In::RawData.new(8, "Q<", 8, "size")) do |size|
+          @file.resize(size)
+        end
         
         command(
           4, :GetSize,
           CMIF::Out::RawData.new(4, "L<")) do
           @file.size
+        end
+      end
+
+      class IStorage < CMIF::Object
+        def initialize(io)
+          @io = io
+        end
+
+        command(
+          0, :Read,
+          CMIF::In::RawData.new(8, "Q<", 8, "offset"),
+          CMIF::In::RawData.new(8, "Q<", 8, "length"),
+          CMIF::Buffer.new(0x46, "data")) do |offset, length, buffer|
+          @io.seek(offset)
+          buffer.write(@io.read(length))
         end
       end
     end

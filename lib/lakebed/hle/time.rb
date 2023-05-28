@@ -21,6 +21,24 @@ module Lakebed
         def initialize(ts)
           @ts = ts
         end
+
+        command(
+          0, :GetStandardUserSystemClock,
+          CMIF::Out::Object.new) do
+          ISystemClock.new
+        end
+        
+        command(
+          1, :GetStandardNetworkSystemClock,
+          CMIF::Out::Object.new) do
+          ISystemClock.new
+        end
+        
+        command(
+          2, :GetStandardSteadyClock,
+          CMIF::Out::Object.new) do
+          ISystemClock.new
+        end
         
         command(
           3, :GetTimeZoneService,
@@ -33,6 +51,9 @@ module Lakebed
           CMIF::Out::Handle.new(:copy)) do
           @ts.shmem
         end
+      end
+
+      class ISystemClock < CMIF::Object
       end
       
       class ITimeZoneService < CMIF::Object

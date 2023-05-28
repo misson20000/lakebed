@@ -35,6 +35,10 @@ module Lakebed
         @services[[name].pack("a8")] = port.client
         port.server
       end
+
+      def get_port(name)
+        @services[[name].pack("a8")]
+      end
       
       class IUserInterface < CMIF::Object
         def initialize(sm)
