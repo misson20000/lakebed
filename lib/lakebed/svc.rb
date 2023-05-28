@@ -27,6 +27,8 @@ module Lakebed
         svc_set_thread_priority
       when 0x11
         svc_signal_event
+      when 0x13
+        svc_map_shared_memory
       when 0x16
         svc_close_handle
       when 0x18
@@ -245,6 +247,20 @@ module Lakebed
     def svc_signal_event
       event = @handle_table.get_strict(x0, Event::Server)
       event.signal
+      x0(0)
+    end
+
+    def svc_map_shared_memory
+      resource = @handle_table.get_strict(x0, Memory::MemoryResource)
+      addr = x1
+      size = x2
+      perm = x3
+
+      # TODO: restrict mapping shared memory to certain portions of address space
+
+      puts "SVCMAPSHAREDMEMORY: #{resource.label} -> 0x#{addr.to_s(16)}, +0x#{size.to_s(16)}"
+      @as_mgr.map_slice!(addr, resource.principal_slice, MemoryType::SharedMemory, perm, {})
+
       x0(0)
     end
     
