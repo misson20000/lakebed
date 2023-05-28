@@ -54,6 +54,17 @@ module Lakebed
       end
 
       class ISystemClock < CMIF::Object
+        command(
+          0, :GetCurrentTime,
+          CMIF::Out::RawData.new(8, "Q<", 8)) do
+          0
+        end
+
+        command(
+          2, :GetSystemClockContext,
+          CMIF::Out::RawData.new(0x20, nil, 8)) do
+          0.chr * 0x20
+        end
       end
       
       class ITimeZoneService < CMIF::Object

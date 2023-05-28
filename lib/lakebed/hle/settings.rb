@@ -14,6 +14,11 @@ module Lakebed
           16, :GetSslKey,
           CMIF::Buffer.new(0x16, "key", 0x130)) do |output|
         end
+        
+        command(
+          17, :GetSslCertificate,
+          CMIF::Buffer.new(0x16, "key", 0x130)) do |output|
+        end
       end
     end
   end
