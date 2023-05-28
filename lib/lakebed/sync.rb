@@ -69,6 +69,10 @@ module Lakebed
       def signal
         @event.signal
       end
+
+      def close
+        @event.signal
+      end
     end
     
     class Client < Waitable
@@ -83,6 +87,10 @@ module Lakebed
       
       def is_signaled?
         @event.is_signaled
+      end
+
+      def close
+        
       end
     end
   end
