@@ -91,8 +91,6 @@ module Lakebed
         segs = []
         s = @first_segment
 
-        puts "#{@label}: carving out 0x#{offset.to_s(16)}, +0x#{size.to_s(16)}"
-        
         while s do
           if s.contains_addr?(offset) then
             s.split!(offset)
@@ -112,7 +110,6 @@ module Lakebed
 
         s = @first_segment
         while s do
-          puts "  #{s}"
           s = s.after
         end
         
@@ -130,7 +127,6 @@ module Lakebed
       
       def grant_permissions!(offset, size, mapping)
         carve!(offset, size).each do |s|
-          puts "#{@label}: granting 0x#{s.addr.to_s(16)} to 0x#{mapping.addr.to_s(16)} from #{s.describe_grantee}"
           s.grant!(mapping)
         end
         coalesce!
@@ -207,13 +203,7 @@ module Lakebed
         end
 
         def maybe_lose_grantee!
-          puts "#{self} is considering losing grantee..."
-          if @grantee then
-            puts "  grantee slice covers 0x#{@grantee.slice.addr.to_s(16)}, +0x#{grantee.slice.size.to_s(16)}"
-            puts "  we are 0x#{@addr.to_s(16)}, +0x#{@size.to_s(16)}"
-          end
           if @grantee && !overlaps_region?(@grantee.slice.addr, @grantee.slice.size) then
-            puts "  lost!"
             @grantee = nil
           end
         end
@@ -385,12 +375,10 @@ module Lakebed
         end
         
         @has_permissions = has_permissions
-        puts "0x#{@addr.to_s(16)}, +0x#{@size.to_s(16)}: protecting to #{@has_permissions}"
         @as_mgr.process.mu.mem_protect(@addr, @size, @has_permissions ? Perm::to_uc(@permissions) : 0)
       end
       
       def map_in
-        puts "0x#{@addr.to_s(16)}, +0x#{@size.to_s(16)}: mapping in"
         @as_mgr.process.mu.mem_map(@addr, @size, 0)
         acquire_permissions!
       end
@@ -401,12 +389,10 @@ module Lakebed
       end
       
       def read_slice
-        puts "0x#{@addr.to_s(16)}, +0x#{@size.to_s(16)}: reading slice (size 0x#{@slice.size.to_s(16)})"
         @as_mgr.process.mu.mem_write(@addr, @slice.content)
       end
 
       def write_slice
-        puts "0x#{@addr.to_s(16)}, +0x#{@size.to_s(16)}: writing slice (size 0x#{@slice.size.to_s(16)})"
         @slice.update(@as_mgr.process.mu.mem_read(@addr, @size))
       end
 
@@ -532,9 +518,6 @@ module Lakebed
         m.permissions = perm
         m.properties = properties
 
-        puts "MAPPING IN SLICE..."
-        dump_mappings
-
         m.map_in
       end
 
@@ -549,7 +532,6 @@ module Lakebed
         m = existing_mappings[0]
         
         src.each do |s|
-          puts "mirroring #{s} onto #{m}"
           if m.size > s.size then
             m = m.split!(m.addr + s.size)
           end
