@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
   spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "unicorn-engine"
+  spec.add_dependency "unicorn-engine", "~> 2.0"
   spec.add_dependency "lz4-ruby"
   spec.add_dependency "rspec", "~> 3.0"
   spec.add_dependency "hexdump", "~> 0.2.3"

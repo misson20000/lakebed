@@ -250,7 +250,17 @@ module Lakebed
 
       @pending_error = nil
       Logger.log_for_thread(next_thread, "starting at #{@current_thread.pc.to_s(16)}")
-      @mu.emu_start(@current_thread.pc, 0, 0, 0)
+
+      begin
+        @mu.emu_start(@current_thread.pc, 0, 0, 0)
+      rescue => exc
+        if @pending_error == nil then
+          @pending_error = exc
+        else
+          puts "dropping error from unicorn: " + exc.inspect
+        end
+      end
+      
       @current_thread.pc = @mu.reg_read(UnicornEngine::UC_ARM64_REG_PC)
       
       if @pending_error then
