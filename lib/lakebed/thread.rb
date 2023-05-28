@@ -140,6 +140,8 @@ module Lakebed
         @objects = []
         @is_finished = true
       end
+
+      attr_reader :objects
     end
     
     attr_reader :process
