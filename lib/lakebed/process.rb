@@ -10,7 +10,8 @@ require_relative "svc.rb"
 
 module Lakebed
   class Process
-    BASE_ADDR = 0x71000000
+    BASE_ADDR = 0x7100000000
+    #BASE_ADDR = 0x71000000
     
     DEFAULT_SIZES = {
       :initial_stack => 8 * 1024 * 1024, # 8 MiB
