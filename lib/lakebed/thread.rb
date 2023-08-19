@@ -54,6 +54,9 @@ module Lakebed
       @synchronization = nil
       @synchronization_canceled = false
       @current = false
+
+      @core_id = 3
+      @core_affinity_mask = 0b1000
     end
 
     def to_s
@@ -155,6 +158,8 @@ module Lakebed
     attr_accessor :synchronization
     attr_accessor :synchronization_canceled
     attr_reader :tls
+    attr_accessor :core_id
+    attr_accessor :core_affinity_mask
 
     def cancel_synchronization
       if @synchronization then

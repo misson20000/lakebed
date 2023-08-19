@@ -25,6 +25,10 @@ module Lakebed
         svc_get_thread_priority
       when 0xd
         svc_set_thread_priority
+      when 0xe
+        svc_get_thread_core_mask
+      when 0xf
+        svc_set_thread_core_mask
       when 0x11
         svc_signal_event
       when 0x13
@@ -258,6 +262,20 @@ module Lakebed
       x0(0)
     end
 
+    def svc_get_thread_core_mask
+      thread = @handle_table.get_strict(x2, LKThread)
+      x0(0)
+      x1(thread.core_id)
+      x2(thread.core_affinity_mask)
+    end
+    
+    def svc_set_thread_core_mask
+      thread = @handle_table.get_strict(x0, LKThread)
+      thread.core_id = x1
+      thread.core_affinity_mask = x2
+      x0(0)
+    end
+    
     def svc_signal_event
       event = @handle_table.get_strict(x0, Event::Server)
       event.signal
