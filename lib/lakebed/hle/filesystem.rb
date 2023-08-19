@@ -202,6 +202,14 @@ module Lakebed
           @io.seek(offset)
           buffer.write(@io.read(length))
         end
+        
+        command(
+          4, :GetSize,
+          CMIF::Out::RawData.new(8, "Q<", 8)) do
+          @io.seek(0, IO::SEEK_END)
+          size = @io.pos
+          size
+        end
       end
     end
   end
