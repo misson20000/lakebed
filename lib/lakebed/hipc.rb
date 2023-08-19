@@ -374,6 +374,8 @@ module Lakebed
           end
           @process.mu.mem_write(@addr, data)
         end
+
+        attr_reader :size
       end
 
       class SyntheticBufferDescriptor

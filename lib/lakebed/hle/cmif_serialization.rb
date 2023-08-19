@@ -157,6 +157,10 @@ module Lakebed
           def write(data)
             @descriptor.write(data)
           end
+
+          def size
+            @descriptor.size
+          end
         end
 
         class SendOutputInstance
