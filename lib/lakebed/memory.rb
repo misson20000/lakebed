@@ -421,9 +421,11 @@ module Lakebed
         @first_mapping = mappings.first
         
         @region_head = head
-        @alias_region = alloc_region(@config[:alias_region_size])
         @heap_region = alloc_region(@config[:heap_region_size])
         @stack_region = alloc_region(@config[:stack_region_size])
+
+        # 1.0.0 userland doesn't care where the kernel says this is, it just assumes it's right here.
+        @alias_region = MemoryRange.new(0x8000000, 0x80000000-0x8000000)
       end
 
       attr_reader :process

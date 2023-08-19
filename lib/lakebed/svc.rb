@@ -132,11 +132,13 @@ module Lakebed
       src_addr = x1
       size = x2
 
-      if !@as_mgr.stack_region.encloses_region?(dst_addr, size) then
+      puts "SVCMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
+      
+      if !@as_mgr.stack_region.encloses_region?(dst_addr, size) && !@as_mgr.alias_region.encloses_region?(dst_addr, size) then
+        puts "  not within stack region (#{@as_mgr.stack_region}) or alias region (#{@as_mgr.alias_region})"
         raise ResultError.new(0xdc01)
       end
 
-      puts "SVCMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
       @as_mgr.reprotect!(src_addr, size, 0)
       puts "Reprotected old region..."
       @as_mgr.dump_mappings
