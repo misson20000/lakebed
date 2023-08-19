@@ -5,7 +5,7 @@ module Lakebed
     class HLEService
       def initialize(kernel)
         @kernel = kernel
-        @server = CMIF::Server.new
+        @server = CMIF::Server.new(kernel.environment)
 
         @kernel.wait_for_port("sm:") do |port|
           @sm = Lakebed::CMIF::ClientSessionObject.new(port.client.connect)

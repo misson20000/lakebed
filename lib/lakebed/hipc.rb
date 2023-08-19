@@ -216,15 +216,15 @@ module Lakebed
     class Message
       def initialize(fields)
         @type = fields[:type]
-        @handle_descriptor = fields[:handle_descriptor]
-        @x_descriptors = fields[:x_descriptors]
-        @a_descriptors = fields[:a_descriptors]
-        @b_descriptors = fields[:b_descriptors]
-        @w_descriptors = fields[:w_descriptors]
-        @raw_data_misalignment = fields[:raw_data_misalignment]
-        @raw_data = fields[:raw_data]
-        @c_descriptor_mode = fields[:c_descriptor_mode]
-        @c_descriptors = fields[:c_descriptors]
+        @handle_descriptor = fields[:handle_descriptor] || nil
+        @x_descriptors = fields[:x_descriptors] || []
+        @a_descriptors = fields[:a_descriptors] || []
+        @b_descriptors = fields[:b_descriptors] || []
+        @w_descriptors = fields[:w_descriptors] || []
+        @raw_data_misalignment = fields[:raw_data_misalignment] || 0
+        @raw_data = fields[:raw_data] || String.new
+        @c_descriptor_mode = fields[:c_descriptor_mode] || 0
+        @c_descriptors = fields[:c_descriptors] || []
       end
 
       def self.parse(process, buffer, size)

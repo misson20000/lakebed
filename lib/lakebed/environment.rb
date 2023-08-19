@@ -9,6 +9,10 @@ module Lakebed
     def is_ams?
       @ams_version != nil
     end
+
+    def tipc_enabled?
+      true
+    end
     
     attr_reader :target_firmware
     attr_reader :ams_version

@@ -5,7 +5,8 @@ module Lakebed
   module HLE
     module CMIF
       class Server
-        def initialize
+        def initialize(environment)
+          @environment = environment
           @hipc_manager = HipcManager.new(self)
           @deferrals = []
         end
@@ -27,7 +28,7 @@ module Lakebed
         
         def add_port(port, pointer_buffer_size=512, &block)
           port.wait do
-            add_session(Session.new(port.accept, yield, @hipc_manager, pointer_buffer_size))
+            add_session(Session.new(@environment, port.accept, yield, @hipc_manager, pointer_buffer_size))
             add_port(port, &block)
             process_deferrals
           end
@@ -35,7 +36,7 @@ module Lakebed
 
         def create_session(object, pointer_buffer_size=512)
           session = HIPC::Session.new
-          add_session(Session.new(session.server, object, @hipc_manager, pointer_buffer_size))
+          add_session(Session.new(@environment, session.server, object, @hipc_manager, pointer_buffer_size))
           return session.client
         end
         
@@ -135,7 +136,8 @@ module Lakebed
       end
       
       class Session
-        def initialize(session, object, hipc_manager, pointer_buffer_size=512)
+        def initialize(environment, session, object, hipc_manager, pointer_buffer_size=512)
+          @environment = environment
           @ko = session
           @object = object
           @hipc_manager = hipc_manager
@@ -177,12 +179,20 @@ module Lakebed
             de_ctx = DeserializationContext.new(server, rq, raw_data, nil)
             return @hipc_manager.parse(server, self, de_ctx)
           else
-            raise "unknown request type: #{rq.type}"
+            if rq.type >= 0x10 && @environment.tipc_enabled? then
+              return @object.parse_tipc(server, self, TipcDeserializationContext.new(server, rq))
+            end
+            return nil
           end
         end
 
         def describe_message(rq)
-          parse(nil, rq).describe
+          msg = parse(nil, rq)
+          if msg != nil then
+            msg.describe
+          else
+            "failed to parse"
+          end
         end
         
         def dispatch(server, rq)
@@ -195,7 +205,11 @@ module Lakebed
         end
 
         def reply(cmif_msg)
-          @ko.reply_message(nil, cmif_msg.to_hipc)
+          self.reply_hipc(cmif_msg.to_hipc)
+        end
+
+        def reply_hipc(hipc_msg)
+          @ko.reply_message(nil, hipc_msg)
         end
         
         attr_reader :ko
@@ -363,6 +377,16 @@ module Lakebed
         end
       end
 
+      class TipcDeserializationContext
+        def initialize(server, rq)
+          @server = server
+          @rq = rq
+        end
+
+        attr_reader :server
+        attr_reader :rq
+      end
+      
       class DeferralError < RuntimeError
       end
       
@@ -376,6 +400,10 @@ module Lakebed
           CommandRequest.new(server, session, self, de_ctx, cmd)
         end
 
+        def parse_tipc(server, session, de_ctx)
+          raise "tipc not supported on #{self.class.name} (override parse_tipc!)"
+        end
+        
         attr_accessor :session
         
         def close
@@ -516,7 +544,7 @@ module Lakebed
           4, :CloneCurrentObjectEx,
           In::RawData.new(4, "L<"),
           Out::Handle.new(:move)) do |_|
-          raise "unimplemented"
+          next @server.create_session(session.object)
         end
       end
     end
