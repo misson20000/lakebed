@@ -93,8 +93,8 @@ module Lakebed
     attr_reader :system_resource_limit
     attr_reader :processes
 
-    def load_hle_module(mod)
-      @hle_modules[mod] = mod.new(self)
+    def load_hle_module(mod, *extras)
+      @hle_modules[mod] = mod.new(self, *extras)
     end
 
     def get_hle_module(mod)
