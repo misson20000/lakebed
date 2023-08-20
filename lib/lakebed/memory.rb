@@ -23,8 +23,8 @@ module Lakebed
     DEFAULT_SIZES = {:heap_region_size => 64 * 1024 * 1024,
                      :alias_region_size => 0x20000 # arbitrary
                     }
-    ADDRSPACE_32 = AddressSpaceConfig.new( 0x200000, 32, :stack_region_size => 0x3fe00000)
-    ADDRSPACE_36 = AddressSpaceConfig.new(0x8000000, 36, :stack_region_size => 0x78000000)
+    ADDRSPACE_32 = AddressSpaceConfig.new( 0x200000, 32, :stack_region_size => nil)
+    ADDRSPACE_36 = AddressSpaceConfig.new(0x8000000, 36, :stack_region_size => nil)
     ADDRSPACE_39 = AddressSpaceConfig.new(0x8000000, 39, :stack_region_size => 0x80000000)
 
     def self.addr_aligned?(addr)
@@ -421,11 +421,15 @@ module Lakebed
         @first_mapping = mappings.first
         
         @region_head = head
+        @alias_region = alloc_region(@config[:alias_region_size])
         @heap_region = alloc_region(@config[:heap_region_size])
-        @stack_region = alloc_region(@config[:stack_region_size])
 
-        # 1.0.0 userland doesn't care where the kernel says this is, it just assumes it's right here.
-        @alias_region = MemoryRange.new(0x8000000, 0x80000000-0x8000000)
+        if @config[:stack_region_size] then
+          @stack_region = alloc_region(@config[:stack_region_size])
+        else
+          # in non-39-bit address spaces, the "stack region" doesn't really exist and you can just map wherever you want in this region.
+          @stack_region = MemoryRange.new(0x8000000, 0x80000000-0x8000000)
+        end
       end
 
       attr_reader :process
