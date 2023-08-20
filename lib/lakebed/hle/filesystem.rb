@@ -53,6 +53,8 @@ module Lakebed
           case tid
           when 0x0100000000000800
             IStorage.new(File.open("certstore.romfs", "rb"))
+          when 0x0100000000000807
+            IStorage.new(File.open("ssid_list.romfs", "rb"))
           else
             raise "unknown data storage tid: 0x" + tid.to_s(16)
           end
