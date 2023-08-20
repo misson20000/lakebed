@@ -132,17 +132,12 @@ module Lakebed
       src_addr = x1
       size = x2
 
-      puts "SVCMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
-      
       if !@as_mgr.stack_region.encloses_region?(dst_addr, size) && !@as_mgr.alias_region.encloses_region?(dst_addr, size) then
         puts "  not within stack region (#{@as_mgr.stack_region}) or alias region (#{@as_mgr.alias_region})"
         raise ResultError.new(0xdc01)
       end
 
       @as_mgr.reprotect!(src_addr, size, 0)
-      puts "Reprotected old region..."
-      @as_mgr.dump_mappings
-      puts "Mirroring in new region..."
       @as_mgr.mirror!(@as_mgr, src_addr, dst_addr, size, MemoryType::Stack, 3)
 
       x0(0)
@@ -160,8 +155,6 @@ module Lakebed
         (src_addr == 0xFFFFFE000) &&
         (size == 0x1000)
 
-      puts "SVCUNMAPMEMORY: 0x#{src_addr.to_s(16)} -> 0x#{dst_addr.to_s(16)}, +0x#{size.to_s(16)}"
-      
       if !Memory::addr_aligned?(dst_addr) || !Memory::addr_aligned?(src_addr) then
         raise ResultError.new(0xcc01)
       end
@@ -196,7 +189,6 @@ module Lakebed
       addr = x2
 
       mapping = @as_mgr.find_mapping(addr)
-      puts "query memory 0x#{addr.to_s(16)}: #{mapping}"
       @mu.mem_write(meminfo, [
                       mapping.addr,
                       mapping.size,
@@ -292,7 +284,6 @@ module Lakebed
 
       # TODO: restrict mapping shared memory to certain portions of address space
 
-      puts "SVCMAPSHAREDMEMORY: #{resource.label} -> 0x#{addr.to_s(16)}, +0x#{size.to_s(16)}"
       @as_mgr.map_slice!(addr, resource.principal_slice, MemoryType::SharedMemory, perm, {})
 
       x0(0)
