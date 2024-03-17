@@ -873,14 +873,14 @@ module Lakebed
 
       # try to lock the mutex on behalf of each thread we're waking, sending them off to the mutex arbitrator
       suspensions.each do |s|
-        prev_tag = update_lock_atomic(s.addr, s.value, HandleWaitMask)
+        prev_tag = update_lock_atomic(s.addr, s.tag, HandleWaitMask)
 
         if prev_tag == 0 then
           s.suspension.release do
             x0(0)
           end
         else
-          @mutex_suspensions.push(MutexSuspension.new(s.addr, s.value, s.suspension))
+          @mutex_suspensions.push(MutexSuspension.new(s.addr, s.tag, s.suspension))
         end
       end
       
@@ -890,7 +890,7 @@ module Lakebed
     end
 
     def update_lock_atomic(address, if_zero, new_orr_mask)
-      value = @mu.mem_read(address, 4).unpack("L<")
+      value = @mu.mem_read(address, 4).unpack("L<")[0]
 
       if value == 0 then
         new_value = if_zero
