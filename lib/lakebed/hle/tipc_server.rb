@@ -51,11 +51,11 @@ module Lakebed
               @session.reply_hipc(@command.invoke(@object, @de_ctx, @session))
             rescue ResultError => e
               @session.reply_hipc(HIPC::Message.new(:type => 0x0, :raw_data_misalignemnt => 8, :raw_data => [e.code].pack("L<")))
-            rescue DeferralError => e
-              return self
+            rescue CMIF::DeferralError => e
+              puts "deferring..."
+              @server.deferrals.push(self)
             end
           end
-          return nil
         end
       end
     end

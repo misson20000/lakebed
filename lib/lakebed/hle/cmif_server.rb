@@ -12,6 +12,7 @@ module Lakebed
         end
 
         attr_reader :hipc_manager
+        attr_reader :deferrals
         
         def process_deferrals
           deferrals = @deferrals
@@ -126,12 +127,11 @@ module Lakebed
             begin
               @session.reply(@command.invoke(@object, @de_ctx, @session))
             rescue DeferralError => e
-              return self
+              @server.deferrals.push(self)
               #TODO: rescue DeserializationError => e
               #TODO:  session.close
             end
           end
-          return nil
         end
       end
       
