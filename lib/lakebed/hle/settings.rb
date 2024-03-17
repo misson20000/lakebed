@@ -25,6 +25,10 @@ module Lakebed
           end
         end
       end
+
+      def inspect
+        "SettingsServer"
+      end
       
       def register_services
         register("set:cal") do
