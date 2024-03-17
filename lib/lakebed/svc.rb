@@ -9,6 +9,10 @@ module Lakebed
       case id
       when 0x1
         svc_set_heap_size
+      when 0x2
+        svc_set_memory_permission
+      when 0x3
+        svc_set_memory_attribute
       when 0x4
         svc_map_memory
       when 0x5
@@ -125,6 +129,27 @@ module Lakebed
       
       x0(0)
       x1(@as_mgr.heap_region.addr)
+    end
+
+    def svc_set_memory_permission
+      addr = x0
+      size = x1
+      perm = x2
+
+      @as_mgr.reprotect!(addr, size, perm)
+      
+      x0(0)
+    end
+    
+    def svc_set_memory_attribute
+      addr = x0
+      size = x1
+      mask = x2
+      value = x3
+
+      # no-op
+      
+      x0(0)
     end
     
     def svc_map_memory
